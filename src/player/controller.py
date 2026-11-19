@@ -34,6 +34,8 @@ class PlayerController:
         self._queue_listeners: List[Callable[[], None]] = []
         self._favorites_listeners: List[Callable[[], None]] = []
         self._playlist_id: Optional[str] = None  # stored playlist the queue came from, if any
+        self._resolve_failures = 0  # consecutive queue songs that could not be resolved
+        self._pending_track: Optional[Track] = None  # queue song whose stream is being fetched right now
 
         # If engine supports event listeners, register our event bridge
         if hasattr(self._engine, "add_event_listener"):
@@ -149,13 +151,18 @@ class PlayerController:
             reason = event.get("reason")
             if reason == "eof":
                 # Only a natural end advances; "stop" is mpv replacing/stopping the file (Next, jump, Stop).
-                self._auto_advance()
+                # If the user already picked the next song and it is still loading, that pick wins.
+                if self._pending_track is None:
+                    self._auto_advance()
             elif reason == "error":
                 # Load failed (e.g. expired/forbidden stream): don't sit on PLAYING at 0:00.
-                self._state = PlaybackState.IDLE
-                self._time_pos = 0.0
-                self._notify_state_change()
-                self._notify_timeline_change()
+                self._go_idle()
+
+    def _go_idle(self):
+        self._state = PlaybackState.IDLE
+        self._time_pos = 0.0
+        self._notify_state_change()
+        self._notify_timeline_change()
 
     def _auto_advance(self):
         """Auto-advance to the next track in the queue, or go IDLE if at end."""
@@ -170,14 +177,12 @@ class PlayerController:
             self._play_track(next_t)
             self._notify_queue_change()
         else:
-            self._state = PlaybackState.IDLE
-            self._time_pos = 0.0
-            self._notify_state_change()
-            self._notify_timeline_change()
+            self._go_idle()
 
     def _play_track(self, track: Track):
         """Internal: load and start playing a track, resolving its stream off-thread if needed."""
         if not track.stream_url:
+            self._pending_track = track
             threading.Thread(target=self._resolve_then_play, args=(track,), daemon=True).start()
             return
         self.start_engine()
@@ -256,15 +261,33 @@ class PlayerController:
 
     def _resolve_then_play(self, track: Track):
         """Worker thread: fetch the stream for a queue track that has only metadata."""
-        resolved = self._resolver.resolve_track(f"https://www.youtube.com/watch?v={track.video_id}")
-        if not resolved or not resolved.stream_url:
-            print(f"[Controller] Could not resolve stream for {track.video_id}")
-            self.stop()
+        try:
+            resolved = self._resolver.resolve_track(f"https://www.youtube.com/watch?v={track.video_id}")
+        except Exception as e:
+            print(f"[Controller] Resolve crashed for {track.video_id}: {e}")
+            resolved = None
+        if self._pending_track is track:
+            self._pending_track = None
+        # The user may have moved on while we were resolving; a stale result, good or bad, must not take over.
+        if self._queue.current_track is not track:
             return
-        # The user may have moved on while we were resolving; a stale result must not take over.
-        if self._queue.current_track is track:
+        if not resolved or not resolved.stream_url:
+            # Deleted/private/blocked video: skip it, but give up once every queued song has failed in a row.
+            print(f"[Controller] Could not resolve stream for {track.video_id}; skipping")
+            self._resolve_failures += 1
+            if self._resolve_failures >= len(self._queue.tracks):
+                self._resolve_failures = 0
+                self._go_idle()
+            else:
+                self._auto_advance()
+            return
+        self._resolve_failures = 0
+        try:
             # Play a copy: the queue keeps metadata only, because stream URLs expire and replays must re-resolve.
             self._play_track(replace(track, stream_url=resolved.stream_url, format_badge=resolved.format_badge))
+        except Exception as e:  # e.g. mpv missing or its pipe failed
+            print(f"[Controller] Could not start playback: {e}")
+            self._go_idle()
 
     def toggle_shuffle(self):
         self._queue.toggle_shuffle()
@@ -273,9 +296,10 @@ class PlayerController:
     def start_engine(self):
         """Starts the underlying audio playback engine if not already running."""
         if hasattr(self._engine, "start"):
-            self._engine.start()
-            # Register property observers for time-pos and duration
-            if hasattr(self._engine, "send_command"):
+            launched = self._engine.start()
+            # Only a freshly launched mpv needs these: mpv keeps every observe_property it is sent,
+            # so re-sending them per track would multiply each position update.
+            if launched and hasattr(self._engine, "send_command"):
                 self._engine.send_command("observe_property", 1, "time-pos")
                 self._engine.send_command("observe_property", 2, "duration")
                 # Stop quits mpv and a fresh one starts at 100%: re-apply the user's level.
@@ -314,13 +338,8 @@ class PlayerController:
         threading.Thread(target=worker, daemon=True).start()
 
     def import_playlist_async(self, url: str, on_complete: Optional[Callable[[bool], None]] = None):
-        """Extract a public/unlisted playlist in the background, store it, and play it from the top."""
-        def worker():
-            ok = self._import_playlist(url)
-            if on_complete:
-                on_complete(ok)
-
-        threading.Thread(target=worker, daemon=True).start()
+        """Extract a public/unlisted playlist in the background, store it, and play it."""
+        self.open_url_async(url, on_complete)  # same guarded worker; playlist links route to _import_playlist
 
     def _import_playlist(self, url: str) -> bool:
         start_id = parse_qs(urlparse(url).query).get("v", [""])[0]
@@ -368,9 +387,16 @@ class PlayerController:
             self.pause()
         elif self._state == PlaybackState.PAUSED:
             self.resume()
-        elif self._current_track and self._current_track.stream_url:
-            # IDLE (track ended) or STOPPED: replay the last track; _play_track restarts mpv if Stop quit it.
-            self._play_track(self._current_track)
+        elif self._current_track:
+            # IDLE (ended, failed, or long idle) or STOPPED: replay the last song from a fresh stream link,
+            # because the cached one may be the link that just failed or may have expired (~6 h).
+            # Queue entries hold metadata only, so playing the queue entry re-resolves it.
+            queued = self._queue.current_track
+            if queued is not None and queued.video_id == self._current_track.video_id:
+                self._play_track(queued)
+            else:
+                url = f"https://www.youtube.com/watch?v={self._current_track.video_id}"
+                threading.Thread(target=self.play_url, args=(url,), daemon=True).start()
 
     def seek(self, seconds: float):
         target = max(0.0, seconds)

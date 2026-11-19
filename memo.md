@@ -2,8 +2,10 @@
 
 A small Windows desktop app that plays the **audio only** from YouTube videos and playlists. It uses no browser and decodes no video, so it stays light on CPU and RAM.
 
-**Run it:** `.venv\Scripts\python main.py` from the project folder.
+**Download:** `LightweightYouTubePlayer.exe` from the [latest GitHub release](https://github.com/Dinushan-S/lightweight-youtube-player/releases/latest): one file, no install, mpv included.
+**Run from source:** `.venv\Scripts\python main.py` from the project folder.
 **Tests:** `.venv\Scripts\python -m pytest -q`
+**Build the .exe:** `.\build.ps1` (PyInstaller; output `dist\LightweightYouTubePlayer.exe`).
 
 _Last updated: 2026-11-19_
 
@@ -98,12 +100,15 @@ _Last updated: 2026-11-19_
 - **Playing audio:** a hidden `mpv` process (`bin/mpv.exe`) controlled through a named pipe (`src/player/mpv_engine.py`).
 - **Storage:** `src/player/database.py` (history, playlists, favorites, settings).
 - **Mini player:** `src/player/mini_player.py`. Cover images come from `i.ytimg.com`, decoded with Pillow, cached in `CoverCache` (shared by both windows).
-- **Product record:** `PRODUCT.md` (who it's for, principles).
+- **App icon:** `assets/icon.ico` (window and .exe). README screenshots: `assets/screenshots/`.
+- **Packaging:** `build.ps1` bundles the app, `bin/mpv.exe` and `bin/vulkan-1.dll` into one `.exe` with PyInstaller.
 
 ## Known limits
 - Each new song takes ~5–13 s to start (YouTube link lookup).
 - A song looped for more than ~6 hours stops with a load error (the stream address expires).
 - Previous / Next do nothing with a single song unless Repeat is on.
+- If the app is killed instead of closed (Task Manager, crash), its mpv can keep running in the background until ended in Task Manager.
+- The `.exe` isn't code-signed, so Windows SmartScreen may warn on first launch (More info → Run anyway).
 - The mini player moves along the top of the **main** monitor only, and its position resets to the top-right each time you dock.
 - The dock's playlist has no ✕ remove; remove songs from the main window's Tracklist.
 - Small icons on coloured buttons can show faint colour fringes (Windows ClearType text smoothing).
@@ -112,6 +117,10 @@ _Last updated: 2026-11-19_
 ---
 
 ## Change log
+- **2026-11-19:**
+  - Fixes from a code review: shuffle + Previous after the end no longer crashes; shuffle + Repeat All no longer replays the song that just ended; a deleted/private video in a playlist is skipped instead of stopping playback (it gives up after every song in a row fails); a slow failed lookup can no longer stop a newer song; mpv position listeners are registered once per mpv start instead of per song, so the UI no longer slows down over long sessions; background loading errors no longer leave the player stuck.
+  - Each copy of the app now talks to its own mpv (the pipe name includes the process id).
+  - Windows `.exe` build (`build.ps1`), app icon, README with a download link, MIT license and third-party notices. Published on GitHub.
 - **2026-11-19:**
   - Removed the Stop button (the unlabeled square in the volume row); Pause covers it.
 - **2026-11-19:**

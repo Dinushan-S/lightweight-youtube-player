@@ -7,3 +7,16 @@ __pycache__/
 *.db
 *.log
 bin/
+
+# Build output
+build/
+dist/
+*.spec
+
+# Local planning and assistant notes (kept on the developer's PC)
+.scratch/
+plan.md
+docs/
+CLAUDE.md
+PRODUCT.md
+.impeccable/

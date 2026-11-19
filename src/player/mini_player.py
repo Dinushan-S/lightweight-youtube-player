@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from src.player.models import PlaybackState
-from src.player.ui import format_time, Icon
+from src.player.ui import format_time, Icon, show_cover
 
 
 class MiniPlayer(ctk.CTkToplevel):
@@ -162,7 +162,9 @@ class MiniPlayer(ctk.CTkToplevel):
 
     def _render_list(self):
         tracks, active = self.c.queue_tracks, self.c.queue_index
-        key = (len(tracks), active)
+        playing = self.c.current_track
+        playing_id = playing.video_id if playing else None
+        key = (len(tracks), active, playing_id)
         if key == self._list_key:
             return
         self._list_key = key
@@ -174,11 +176,12 @@ class MiniPlayer(ctk.CTkToplevel):
         first = max(0, active - 3)
         th = self.app.t
         for i, t in enumerate(tracks[first:first + self.LIST_ROWS], start=first):
+            on = t.video_id == playing_id  # highlight the song actually playing (it may have been removed)
             ctk.CTkButton(
                 self.list_frame, text=f"{i + 1}. {self._short(t.title, 40)}", anchor="w", height=26,
-                fg_color=th["active_row"] if i == active else "transparent", hover_color=th["hover"],
-                text_color=th["accent"] if i == active else th["text"],
-                font=(self.app.FONT, 11, "bold" if i == active else "normal"),
+                fg_color=th["active_row"] if on else "transparent", hover_color=th["hover"],
+                text_color=th["accent"] if on else th["text"],
+                font=(self.app.FONT, 11, "bold" if on else "normal"),
                 command=lambda i=i: self.c.play_queue_index(i),
             ).pack(fill="x")
 
@@ -186,11 +189,13 @@ class MiniPlayer(ctk.CTkToplevel):
     def _tick(self):
         if not self.winfo_exists():
             return
-        dur = self.c.duration
-        self.line.set(min(1.0, self.c.time_pos / dur) if dur > 0 else 0)
-        if self.panel.winfo_ismapped():
-            self._refresh()
-        self.after(250, self._tick)
+        try:
+            dur = self.c.duration
+            self.line.set(min(1.0, self.c.time_pos / dur) if dur > 0 else 0)
+            if self.panel.winfo_ismapped():
+                self._refresh()
+        finally:
+            self.after(250, self._tick)  # one failed draw must not freeze the dock
 
     def _refresh(self):
         t = self.c.current_track
@@ -212,12 +217,12 @@ class MiniPlayer(ctk.CTkToplevel):
             self._render_list()
 
     def _show_cover(self, video_id):
-        if video_id == self._shown_thumb:
+        if self._shown_thumb == (video_id, True):
             return
         img = self.app.covers.get(video_id, (64, 36))
-        if img:
-            self.cover.configure(image=img, text="")
-            self._shown_thumb = video_id
+        if (video_id, bool(img)) != self._shown_thumb:  # placeholder until this song's cover arrives
+            show_cover(self.cover, img, Icon.MUSIC)
+            self._shown_thumb = (video_id, bool(img))
 
     @staticmethod
     def _short(text, n):

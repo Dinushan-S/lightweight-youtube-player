@@ -176,8 +176,13 @@ class DatabaseManager:
             conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
 
     def remove_playlist_track(self, playlist_id: str, video_id: str):
+        """Remove one copy (a playlist can list the same song twice; the queue removes one entry)."""
         with self._get_connection() as conn:
-            conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ? AND video_id = ?", (playlist_id, video_id))
+            conn.execute("""
+                DELETE FROM playlist_tracks WHERE id = (
+                    SELECT id FROM playlist_tracks WHERE playlist_id = ? AND video_id = ?
+                    ORDER BY track_order LIMIT 1)
+            """, (playlist_id, video_id))
 
     # --- Settings ---
 

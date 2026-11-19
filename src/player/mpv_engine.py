@@ -15,7 +15,8 @@ try:
 except ImportError:
     HAS_WIN32 = False
 
-PIPE_NAME = "mpv_music_player"
+# One pipe per app process: a second copy of the app (or an mpv orphaned by a crash) must not answer our commands.
+PIPE_NAME = f"mpv_music_player_{os.getpid()}"
 
 def find_mpv_binary() -> Optional[str]:
     """Finds the portable or installed mpv binary."""
@@ -67,10 +68,10 @@ class MpvEngine:
     def build_property(prop_name: str, value: Any) -> str:
         return json.dumps({"command": ["set_property", prop_name, value]}) + "\n"
 
-    def start(self):
-        """Starts the MPV headless process with hidden window."""
+    def start(self) -> bool:
+        """Starts the headless mpv process. Returns True if it launched one, False if it was already running."""
         if self._process and self._process.poll() is None:
-            return
+            return False
 
         if not self.mpv_path or not os.path.exists(self.mpv_path):
             raise FileNotFoundError(f"MPV binary not found at: {self.mpv_path}")
@@ -83,7 +84,7 @@ class MpvEngine:
             startupinfo.wShowWindow = subprocess.SW_HIDE
             creationflags = subprocess.CREATE_NO_WINDOW
 
-        ipc_name = self.pipe_name.replace(r"\\.\pipe\\", "")
+        ipc_name = self.pipe_name.removeprefix("\\\\.\\pipe\\")  # accept a bare name or a full \\.\pipe\ path
         pipe_path = rf"\\.\pipe\{ipc_name}"
 
         cmd = [
@@ -141,6 +142,7 @@ class MpvEngine:
         # Start event listener thread
         self._listener_thread = threading.Thread(target=self._listen_events, daemon=True)
         self._listener_thread.start()
+        return True
 
     def _listen_events(self):
         """Reads JSON responses/events from MPV IPC non-blockingly."""

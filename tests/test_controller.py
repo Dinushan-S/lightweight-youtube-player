@@ -129,7 +129,11 @@ def test_play_after_stop_restarts_last_track():
     controller.stop()
     assert controller.state == PlaybackState.STOPPED and engine.loaded_url is None
 
-    controller.toggle_play_pause()
+    controller.toggle_play_pause()  # re-resolves a fresh stream in the background
+    import time
+    deadline = time.time() + 3
+    while controller.state != PlaybackState.PLAYING and time.time() < deadline:
+        time.sleep(0.01)
     assert controller.state == PlaybackState.PLAYING
     assert engine.loaded_url == "https://audio.googlevideo.com/videoplayback?itag=251"
 

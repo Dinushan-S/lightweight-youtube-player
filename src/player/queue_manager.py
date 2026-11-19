@@ -13,6 +13,9 @@ class QueueManager:
         self._is_shuffle: bool = False
         self._shuffle_order: List[int] = []
         self._shuffle_pos: int = -1
+        # True after the current song was removed: the pointer then sits on the song *before* the gap,
+        # so Next plays the song after the gap and Previous plays the one before it (not two back).
+        self._current_removed: bool = False
 
     @property
     def tracks(self) -> List[Track]:
@@ -39,24 +42,27 @@ class QueueManager:
         self._is_shuffle = False
         self._shuffle_order = []
         self._shuffle_pos = -1
+        self._current_removed = False
 
     def next_track(self) -> Optional[Track]:
         """Advance to the next track based on repeat/shuffle mode."""
         if not self._tracks:
             return None
+        in_gap, self._current_removed = self._current_removed, False
 
-        if self.repeat_mode == RepeatMode.ONE:
-            # Stay on the same track
+        if self.repeat_mode == RepeatMode.ONE and not in_gap:
+            # Stay on the same track (a removed song can't be repeated, so a gap moves on)
             return self.current_track
 
         if self._is_shuffle:
-            self._shuffle_pos += 1
-            if self._shuffle_pos >= len(self._shuffle_order):
-                if self.repeat_mode == RepeatMode.ALL:
-                    self._rebuild_shuffle_order()
-                    self._shuffle_pos = 0
-                else:
-                    return None
+            if self._shuffle_pos + 1 < len(self._shuffle_order):
+                self._shuffle_pos += 1
+            elif self.repeat_mode == RepeatMode.ALL:
+                # New round: the rebuilt order starts with the song that just played, so begin at its successor.
+                self._rebuild_shuffle_order()
+                self._shuffle_pos = 1 if len(self._shuffle_order) > 1 else 0
+            else:
+                return None  # end of the shuffled order; position stays valid for Previous
             self._current_index = self._shuffle_order[self._shuffle_pos]
             return self.current_track
 
@@ -75,6 +81,11 @@ class QueueManager:
         """Go back to the previous track."""
         if not self._tracks:
             return None
+        if self._current_removed:
+            # The pointer already sits on the song before the removed one.
+            self._current_removed = False
+            if self.current_track is not None:
+                return self.current_track
 
         if self._is_shuffle:
             if self._shuffle_pos > 0:
@@ -96,6 +107,7 @@ class QueueManager:
         if not 0 <= index < len(self._tracks):
             return None
         self._current_index = index
+        self._current_removed = False
         if self._is_shuffle:
             self._rebuild_shuffle_order()
             self._shuffle_pos = 0
@@ -106,14 +118,20 @@ class QueueManager:
         if not 0 <= index < len(self._tracks):
             return None
         removed = self._tracks.pop(index)
-        if index <= self._current_index:
-            # Removing the current song steps back one, so next_track() lands on the song that slid into its place.
-            self._current_index -= 1
         if not self._tracks:
-            self._current_index = -1
+            self.load_tracks([])
+            return removed
+        if index == self._current_index:
+            self._current_removed = True
+        if index <= self._current_index:
+            self._current_index -= 1
         if self._is_shuffle:
-            self._rebuild_shuffle_order()
-            self._shuffle_pos = 0
+            # Keep the round going: drop the entry and renumber, instead of reshuffling played songs back in.
+            removed_pos = self._shuffle_order.index(index)
+            self._shuffle_order = [i - (i > index) for i in self._shuffle_order if i != index]
+            if removed_pos <= self._shuffle_pos:
+                self._shuffle_pos -= 1
+            self._current_index = self._shuffle_order[self._shuffle_pos] if self._shuffle_pos >= 0 else -1
         return removed
 
     def toggle_shuffle(self):
@@ -128,9 +146,9 @@ class QueueManager:
             self._shuffle_pos = -1
 
     def _rebuild_shuffle_order(self):
-        """Build a randomized order that starts with the current track."""
+        """Build a randomized order that starts with the current track (if there is one)."""
         indices = list(range(len(self._tracks)))
-        if self._current_index in indices:
-            indices.remove(self._current_index)
-        random.shuffle(indices)
-        self._shuffle_order = [self._current_index] + indices
+        first = [self._current_index] if self._current_index in indices else []
+        rest = [i for i in indices if i not in first]
+        random.shuffle(rest)
+        self._shuffle_order = first + rest

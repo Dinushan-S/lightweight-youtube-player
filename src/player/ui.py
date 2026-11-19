@@ -1,4 +1,5 @@
 import io
+import os
 import threading
 import tkinter.font as tkfont
 import urllib.request
@@ -90,23 +91,38 @@ class CoverCache:
             self._data[video_id] = "loading"
             threading.Thread(target=self._fetch, args=(video_id,), daemon=True).start()
             return None
-        if isinstance(v, bytes):
-            if not v:
-                return None
-            self._data[video_id] = v = Image.open(io.BytesIO(v))
-        if isinstance(v, Image.Image):
-            key = (video_id, size)
-            if key not in self._images:
-                self._images[key] = ctk.CTkImage(v, size=size)
-            return self._images[key]
+        try:
+            if isinstance(v, bytes):
+                if not v:
+                    return None
+                img = Image.open(io.BytesIO(v))
+                img.load()  # decode now, so a bad download fails here and not inside Tk later
+                self._data[video_id] = v = img
+            if isinstance(v, Image.Image):
+                key = (video_id, size)
+                if key not in self._images:
+                    self._images[key] = ctk.CTkImage(v, size=size)
+                return self._images[key]
+        except Exception as e:  # not an image (captive portal, truncated body): no cover for this song
+            print(f"[CoverCache] Bad thumbnail for {video_id}: {e}")
+            self._data[video_id] = b""
         return None
 
     def _fetch(self, video_id: str):
         try:
             with urllib.request.urlopen(f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg", timeout=10) as r:
                 self._data[video_id] = r.read()
-        except OSError:
+        except Exception:  # OSError, IncompleteRead, ...: never leave the entry stuck on "loading"
             self._data[video_id] = b""
+
+
+def show_cover(label: ctk.CTkLabel, image: Optional[ctk.CTkImage], placeholder: str):
+    """Put `image` on a cover label, or the placeholder glyph when there is none."""
+    if image:
+        label.configure(image=image, text="")
+    else:
+        label.configure(image=None, text=placeholder)
+        label._label.configure(image="")  # CTk leaves the old picture on its inner label when given None
 
 
 class MusicPlayerApp(ctk.CTk):
@@ -130,10 +146,16 @@ class MusicPlayerApp(ctk.CTk):
 
         self.covers = CoverCache()
         self._is_seeking = False
+        self._status_error = False
         self._cached_history: List[Track] = []
         self.mini = None
 
         self.title("Lightweight YouTube Player")
+        # assets/ sits next to src/ in the repo and at the bundle root in the .exe build
+        icon = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            "assets", "icon.ico")
+        if os.path.exists(icon):
+            self.iconbitmap(icon)
         self.geometry("880x560")
         self.minsize(700, 460)
 
@@ -150,7 +172,13 @@ class MusicPlayerApp(ctk.CTk):
 
     def _load_theme(self, name: str):
         """(Re)build every widget in theme `name`, then repaint the current player state into it."""
-        open_tab = self.tabs.get() if hasattr(self, "tabs") else None
+        # Carry in-progress UI state across the rebuild (a link mid-load must keep Play disabled)
+        old = None
+        if hasattr(self, "tabs"):
+            old = dict(tab=self.tabs.get(), url=self.url_entry.get(),
+                       loading=self.play_url_btn.cget("state") == "disabled",
+                       status=self.status_label.cget("text"), status_error=self._status_error)
+        self._is_seeking = False  # the slider being dragged is about to be destroyed
         self.theme_name, self.t = name, THEMES[name]
         # Changing light/dark makes CTk re-focus the previously focused widget a moment later;
         # that widget is about to be destroyed, so park focus on the window first.
@@ -162,8 +190,12 @@ class MusicPlayerApp(ctk.CTk):
                 child.destroy()
         self._shown_cover = None
         self._build_widgets()
-        if open_tab:
-            self._select_tab(open_tab)
+        if old:
+            self._select_tab(old["tab"])
+            self.url_entry.insert(0, old["url"])
+            if old["loading"]:
+                self.play_url_btn.configure(state="disabled", text="Loading")
+            self._set_status(old["status"], error=old["status_error"])
 
         c = self.controller
         self._refresh_history_ui()
@@ -185,7 +217,7 @@ class MusicPlayerApp(ctk.CTk):
 
     def _follow_windows_mode(self):
         """In AUTO, switch Graphite/Porcelain when Windows switches dark/light (checked every 2 s)."""
-        if self.theme_choice == AUTO and self.mini is None:
+        if self.theme_choice == AUTO and self.mini is None and not self._is_seeking:
             name = resolve_theme(AUTO)
             if name != self.theme_name:
                 self._load_theme(name)
@@ -403,6 +435,7 @@ class MusicPlayerApp(ctk.CTk):
         self.controller.open_url_async(url, on_complete=on_done)
 
     def _set_status(self, text: str, error: bool = False):
+        self._status_error = error
         self.status_label.configure(text=text, text_color=self.t["accent"] if error else self.t["muted"])
         if text:
             self.status_label.pack(fill="x", anchor="w", pady=(2, 0), before=self.fav_btn)
@@ -598,14 +631,17 @@ class MusicPlayerApp(ctk.CTk):
         self._refresh_fav_btn()
 
     def _cover_tick(self):
-        track = self.controller.current_track
-        vid = track.video_id if track else None
-        if vid != self._shown_cover and vid:
-            img = self.covers.get(vid, self.COVER)
-            if img:
-                self.cover_label.configure(image=img, text="")
-                self._shown_cover = vid
-        self.after(300, self._cover_tick)
+        try:
+            track = self.controller.current_track
+            vid = track.video_id if track else None
+            if vid and self._shown_cover != (vid, True):
+                img = self.covers.get(vid, self.COVER)
+                # New song without a cover yet (or none at all): placeholder, never the previous song's art
+                if (vid, bool(img)) != self._shown_cover:
+                    show_cover(self.cover_label, img, Icon.MUSIC)
+                    self._shown_cover = (vid, bool(img))
+        finally:
+            self.after(300, self._cover_tick)  # keep ticking even if a draw fails once
 
     # --- history -----------------------------------------------------------------------
     def _refresh_history_ui(self):
