@@ -28,7 +28,6 @@ class Icon:
     PAUSE = ""
     PREV = ""
     NEXT = ""
-    STOP = ""
     SHUFFLE = ""
     REPEAT_ALL = ""
     REPEAT_ONE = ""
@@ -357,10 +356,9 @@ class MusicPlayerApp(ctk.CTk):
         self.next_btn = self._icon_btn(transport, Icon.NEXT, self._on_next_click, font_size=16)
         self.repeat_btn = self._icon_btn(transport, Icon.REPEAT_ALL, self._on_repeat_click, muted=True)
 
-        # Volume + stop
+        # Volume
         bottom = ctk.CTkFrame(inner, fg_color="transparent")
         bottom.pack(fill="x", side="bottom")
-        self.stop_btn = self._icon_btn(bottom, Icon.STOP, self._on_stop_click, size=32, font_size=12, muted=True)
         self.vol_pct_label = self._label(bottom, size=11, muted=True, width=40, anchor="e")
         self.vol_pct_label.pack(side="right")
         self.volume_slider = self._slider(bottom, from_=0, to=100, number_of_steps=100, width=120, height=14,
@@ -420,9 +418,6 @@ class MusicPlayerApp(ctk.CTk):
             self._on_play_click()  # nothing loaded yet: pasted link, else last history song
         else:
             self.controller.toggle_play_pause()
-
-    def _on_stop_click(self):
-        self.controller.stop()
 
     def _on_prev_click(self):
         self.controller.prev_track()

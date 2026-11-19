@@ -32,14 +32,13 @@ _Last updated: 2026-11-19_
 - **Audio quality:** best audio-only stream, Opus first, then M4A.
 
 ### Player controls (under the seek bar)
-`shuffle   previous   [ play / pause ]   next   repeat`, with **stop** at bottom-left.
+`shuffle   previous   [ play / pause ]   next   repeat`. There is no Stop button; Pause covers it.
 
 | Button | What it does |
 |---|---|
-| Play / Pause | Play / pause. If nothing is loaded, plays the pasted link, or else the last History song. After Stop, plays the last song again. |
+| Play / Pause | Play / pause. If nothing is loaded, plays the pasted link, or else the last History song. If a song fails to load, Play tries the last song again. |
 | Previous | Previous song in the queue. |
 | Next | Next song in the queue. Works while paused (the new song plays). |
-| Stop | Stops playback. Play afterwards restarts the same song. |
 | Shuffle | Random order, keeping the current song first. Accent colour = on. |
 | Repeat | Cycles Off → All (accent) → One (accent, "1" icon). |
 
@@ -66,7 +65,7 @@ _Last updated: 2026-11-19_
 - **Slider 0–100%** in 1% steps, with the level shown next to it (e.g. `75%`).
 - **Mouse wheel** over the slider: ±5% per notch.
 - **Mute button.** The icon follows the level (loud, quiet, silent, muted). Mute keeps your level and unmute restores it; moving the slider also unmutes.
-- Your volume is kept after Stop (mpv restarting doesn't reset it to 100%).
+- Your volume is kept if the audio engine (mpv) restarts; it doesn't reset to 100%.
 
 ### Docked mini player (Dock button, next to Play)
 - **Dock** hides the main window and pins a mini player to the **top edge of the screen** (top-right corner by default). It stays on top of other windows.
@@ -113,6 +112,8 @@ _Last updated: 2026-11-19_
 ---
 
 ## Change log
+- **2026-11-19:**
+  - Removed the Stop button (the unlabeled square in the volume row); Pause covers it.
 - **2026-11-19:**
   - Theme default now follows Windows: "Match Windows" uses Graphite in dark mode and Porcelain in light mode, and switches live. Indigo and the fixed themes stay in the menu.
   - Fixed: switching between a dark and a light theme printed `TclError: bad window path name …` in the terminal.
