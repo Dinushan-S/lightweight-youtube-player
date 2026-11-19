@@ -34,6 +34,7 @@ class MusicPlayerApp(ctk.CTk):
         self.controller = controller or PlayerController()
         self._is_seeking = False
         self._cached_history: List[Track] = []
+        self.mini = None
 
         # Window Setup
         self.title("Lightweight YouTube Player")
@@ -86,6 +87,19 @@ class MusicPlayerApp(ctk.CTk):
             command=self._on_play_click,
         )
         self.play_url_btn.pack(side="right")
+
+        self.dock_btn = ctk.CTkButton(
+            self.header_frame,
+            text="⇱ Dock",
+            width=80,
+            height=38,
+            fg_color=self.COLOR_CARD,
+            hover_color=self.COLOR_CARD_HOVER,
+            text_color=self.COLOR_TEXT,
+            font=("Segoe UI", 13, "bold"),
+            command=self.dock,
+        )
+        self.dock_btn.pack(side="right", padx=(0, 10))
 
         # Main Content Split (Now Playing Left, History Right)
         self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -263,7 +277,7 @@ class MusicPlayerApp(ctk.CTk):
         )
         self.volume_slider.set(self.controller.volume)
         self.volume_slider.pack(side="left", padx=(4, 8))
-        self.volume_slider.bind("<MouseWheel>", lambda e: self._on_volume_change(self.controller.volume + (5 if e.delta > 0 else -5)))
+        self.volume_slider.bind("<MouseWheel>", self.on_volume_wheel)
         self.vol_pct_label = ctk.CTkLabel(
             volume_row,
             text="",
@@ -412,15 +426,24 @@ class MusicPlayerApp(ctk.CTk):
         self.volume_slider.set(self.controller.volume)  # mouse-wheel path doesn't move the slider itself
         self._refresh_volume_ui()
 
+    def on_volume_wheel(self, event):
+        # 5% per notch; Windows may merge several notches into one event (delta = ±120 each).
+        self._on_volume_change(self.controller.volume + round(5 * event.delta / 120))
+
     def _on_mute_click(self):
         self.controller.toggle_mute()
         self._refresh_volume_ui()
 
     def _refresh_volume_ui(self):
+        self.mute_btn.configure(text=self.volume_icon(), text_color=self.COLOR_ACCENT if self.controller.muted else self.COLOR_TEXT)
+        self.vol_pct_label.configure(text=self.volume_text())
+
+    def volume_icon(self) -> str:
         vol, muted = self.controller.volume, self.controller.muted
-        icon = "🔇" if muted or vol == 0 else ("🔉" if vol < 50 else "🔊")
-        self.mute_btn.configure(text=icon, text_color=self.COLOR_ACCENT if muted else self.COLOR_TEXT)
-        self.vol_pct_label.configure(text="Muted" if muted else f"{vol}%")
+        return "🔇" if muted or vol == 0 else ("🔉" if vol < 50 else "🔊")
+
+    def volume_text(self) -> str:
+        return "Muted" if self.controller.muted else f"{self.controller.volume}%"
 
     def _on_seek_drag(self, val):
         self._is_seeking = True
@@ -534,6 +557,18 @@ class MusicPlayerApp(ctk.CTk):
         self.url_entry.delete(0, "end")
         self.url_entry.insert(0, f"https://www.youtube.com/watch?v={track.video_id}")
         self._on_play_click()
+
+    def dock(self):
+        """Hide the main window and pin the mini player to the top of the screen."""
+        from src.player.mini_player import MiniPlayer  # lazy: mini_player imports this module
+        self.withdraw()
+        self.mini = MiniPlayer(self)
+
+    def undock(self):
+        self.mini.destroy()
+        self.mini = None
+        self.deiconify()
+        self.lift()
 
     def _on_close(self):
         self.controller.stop()
