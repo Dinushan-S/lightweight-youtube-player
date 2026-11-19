@@ -1,7 +1,9 @@
 import pytest
 import time
-from src.player.mpv_engine import MpvEngine
+from src.player.mpv_engine import MpvEngine, find_mpv_binary
 
+
+@pytest.mark.skipif(find_mpv_binary() is None, reason="needs mpv (bin\\mpv.exe, winget, or PATH)")
 def test_mpv_engine_lifecycle():
     engine = MpvEngine(pipe_name="test_mpv_pipe")
     try:
