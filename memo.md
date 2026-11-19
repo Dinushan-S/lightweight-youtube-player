@@ -3,7 +3,7 @@
 A small Windows desktop app that plays the **audio only** from YouTube videos and playlists. It uses no browser and decodes no video, so it stays light on CPU and RAM.
 
 **Download:** [LightweightYouTubePlayer.exe](https://github.com/Dinushan-S/lightweight-youtube-player/releases/latest/download/LightweightYouTubePlayer.exe) (direct link, always the newest version): one file, no install, mpv included.
-**Releases:** [v1.1.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.1.0) (current) · [v1.0.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.0.0) · [all releases](https://github.com/Dinushan-S/lightweight-youtube-player/releases)
+**Releases:** [v1.2.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.2.0) (current) · [v1.1.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.1.0) · [v1.0.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.0.0) · [all releases](https://github.com/Dinushan-S/lightweight-youtube-player/releases)
 **Source code:** https://github.com/Dinushan-S/lightweight-youtube-player (public, MIT License)
 **Run from source:** `.venv\Scripts\python main.py` from the project folder.
 **Tests:** `.venv\Scripts\python -m pytest -q`
@@ -73,7 +73,7 @@ _Last updated: 2026-11-19_
 - **Sync:** automatic each time the player starts, or **Google ▾ → Sync now**. Each sync replaces the copies; playlists you deleted on YouTube (or that stopped being mostly music) disappear.
 - **Disconnect…** forgets the sign-in (also tells Google) and removes the synced playlists. History and Favorites stay.
 - The sign-in is saved **encrypted with Windows** (only your Windows account on this PC can read it).
-- The Google button only shows when a Google client file (`client_secret*.json`) is next to the app (source) or bundled in the `.exe`.
+- The Google button only shows when a Google client file (`client_secret*.json`) is next to the app (source) or bundled in the `.exe`. The public GitHub download is built without one (the app is in Google's Testing mode, so strangers would only get "access_denied"); Google sign-in is in the owner's own build only.
 - **Google Cloud setup:** YouTube Data API v3 on, OAuth consent screen in **Testing** with your account as a test user, client type **TVs and Limited Input devices** (the only type that allows code sign-in).
 
 ### Removing songs from a playlist
@@ -164,6 +164,7 @@ _Last updated: 2026-11-19_
 - **2026-11-19:**
   - Google account: connect with a code at google.com/device (Playlists tab → Google ▾); your YouTube music playlists (private ones too) and Liked music sync into the player, read-only, again at every start or with Sync now. Music only (YouTube's Music category; playlists at least half songs). Disconnect removes them. Sign-in saved encrypted with Windows DPAPI. No new dependencies.
   - Fixed the tests that failed now and then: the in-memory test database is shared by threads and now takes turns (the app itself was never affected; it opens a new connection per call).
+  - Published as [release v1.2.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.2.0) carrying `LightweightYouTubePlayer.exe` built **without** the Google client file (SHA-256 `FCA74E884AF79346A979B7F3E1FE63539700F5F28EFD7971770EA4351D9CB3A3`).
 - **2026-11-19:**
   - Your own playlists: Playlists tab (new, play, rename, delete), ＋ button and right-click "Add to playlist" on any song, pasted links can be added too, Move up / Move down in the Tracklist. Edits are saved in order.
   - Dock: **Ctrl+M** toggles full window ↔ dock; pin button for always-on-top (saved).

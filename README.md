@@ -19,7 +19,7 @@ No installation is needed: download it and double-click. All releases are on the
 - **Controls:** play / pause, previous, next, shuffle, repeat (off, all, one), seek, volume with mute and mouse-wheel steps.
 - **Docked mini player:** one click (or **Ctrl+M**) hides the window and pins a thin progress line to the top of your screen. Hover it for the cover, controls, volume, favorite and the playlist; drag it anywhere along the top; unpin it if you don't want it always on top.
 - **Your own playlists:** make playlists in the Playlists tab and add songs with ＋ or by right-clicking any song. Reorder with Move up / Move down, remove with ✕.
-- **Your YouTube playlists (optional):** connect your Google account with a code at google.com/device, and your music playlists (private ones too) and liked songs show up in the Playlists tab. Read-only. Needs a Google client file, see [Google sign-in](#google-sign-in-optional).
+- **Your YouTube playlists (optional):** connect your Google account with a code at google.com/device, and your music playlists (private ones too) and liked songs show up in the Playlists tab. Read-only. Not in the download: it needs your own Google client file and a build from source, see [Google sign-in](#google-sign-in-optional).
 - **Works in the background:** keyboard and headset media keys control it from any app, and closing or minimizing hides it to the system tray (right-click the tray icon to quit).
 - **Favorites:** heart a song from the main window or the dock; find it again in the Favorites tab.
 - **History:** every song you played, searchable. Press Play with an empty link box to pick up your last song.
