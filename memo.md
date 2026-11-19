@@ -3,7 +3,7 @@
 A small Windows desktop app that plays the **audio only** from YouTube videos and playlists. It uses no browser and decodes no video, so it stays light on CPU and RAM.
 
 **Download:** [LightweightYouTubePlayer.exe](https://github.com/Dinushan-S/lightweight-youtube-player/releases/latest/download/LightweightYouTubePlayer.exe) (direct link, always the newest version): one file, no install, mpv included.
-**Releases:** [v1.0.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.0.0) (current) · [all releases](https://github.com/Dinushan-S/lightweight-youtube-player/releases)
+**Releases:** [v1.1.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.1.0) (current) · [v1.0.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.0.0) · [all releases](https://github.com/Dinushan-S/lightweight-youtube-player/releases)
 **Source code:** https://github.com/Dinushan-S/lightweight-youtube-player (public, MIT License)
 **Run from source:** `.venv\Scripts\python main.py` from the project folder.
 **Tests:** `.venv\Scripts\python -m pytest -q`
@@ -149,6 +149,7 @@ _Last updated: 2026-11-19_
   - Media keys (keyboard and headset) work from any app; system tray icon with Show / Play-Pause / Next / Previous / Quit. Closing or minimizing now hides to the tray instead of quitting.
   - New dependency: `pystray` (tray icon).
   - A link that keeps loading can now be cancelled (Play becomes **Cancel**) or replaced by pasting a new link and pressing Enter. Before, Play stayed disabled until the bad link timed out.
+  - Published as [release v1.1.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.1.0) carrying `LightweightYouTubePlayer.exe` (SHA-256 `632F53D37DB7F6A89F23DEC4C84C075A71A2C850B98B633DFD6D83CEFDCE619E`).
 - **2026-11-19:**
   - Fixes from a code review: shuffle + Previous after the end no longer crashes; shuffle + Repeat All no longer replays the song that just ended; a deleted/private video in a playlist is skipped instead of stopping playback (it gives up after every song in a row fails); a slow failed lookup can no longer stop a newer song; mpv position listeners are registered once per mpv start instead of per song, so the UI no longer slows down over long sessions; background loading errors no longer leave the player stuck.
   - Each copy of the app now talks to its own mpv (the pipe name includes the process id).
