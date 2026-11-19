@@ -25,6 +25,7 @@ class PlayerController:
         self._state = PlaybackState.IDLE
         self._current_track: Optional[Track] = None
         self._volume: int = 100
+        self._muted: bool = False
         self._time_pos: float = 0.0
         self._duration: float = 0.0
         self._state_listeners: List[Callable[[PlaybackState, Optional[Track]], None]] = []
@@ -135,7 +136,8 @@ class PlayerController:
         elif event_name == "unpause":
             self._state = PlaybackState.PLAYING
             self._notify_state_change()
-        elif event_name == "playback-restart":
+        elif event_name == "playback-restart" and self._state != PlaybackState.PAUSED:
+            # mpv also fires this after a seek; a paused player must stay paused.
             self._state = PlaybackState.PLAYING
             self._notify_state_change()
         elif event_name == "end-file":
@@ -153,7 +155,13 @@ class PlayerController:
     def _auto_advance(self):
         """Auto-advance to the next track in the queue, or go IDLE if at end."""
         next_t = self._queue.next_track()
-        if next_t is not None:
+        cur = self._current_track
+        if next_t is not None and cur and cur.stream_url and next_t.video_id == cur.video_id:
+            # Repeating the same song: reuse its stream instead of an ~8s re-resolve.
+            # ponytail: stream URLs expire after ~6h; a song looped that long ends on a load error.
+            self._play_track(cur)
+            self._notify_queue_change()
+        elif next_t is not None:
             self._play_track(next_t)
             self._notify_queue_change()
         else:
@@ -235,6 +243,8 @@ class PlayerController:
             if hasattr(self._engine, "send_command"):
                 self._engine.send_command("observe_property", 1, "time-pos")
                 self._engine.send_command("observe_property", 2, "duration")
+                # Stop quits mpv and a fresh one starts at 100%: re-apply the user's level.
+                self._engine.send_command("set_property", "volume", self.effective_volume)
 
     def get_history(self, limit: int = 50) -> List[Track]:
         return self._db.get_history(limit=limit)
@@ -244,7 +254,10 @@ class PlayerController:
         self.start_engine()
         track = self._resolver.resolve_track(url)
         if track and track.stream_url:
+            # A single song is a one-track queue, so Repeat works and an old playlist doesn't take over at its end.
+            self._queue.load_tracks([replace(track, stream_url="")])
             self._play_track(track)
+            self._notify_queue_change()
             return track
         return None
 
@@ -318,10 +331,9 @@ class PlayerController:
             self.pause()
         elif self._state == PlaybackState.PAUSED:
             self.resume()
-        elif self._state == PlaybackState.IDLE and self._current_track and self._current_track.stream_url:
-            self._engine.load_stream(self._current_track.stream_url)
-            self._state = PlaybackState.PLAYING
-            self._notify_state_change()
+        elif self._current_track and self._current_track.stream_url:
+            # IDLE (track ended) or STOPPED: replay the last track; _play_track restarts mpv if Stop quit it.
+            self._play_track(self._current_track)
 
     def seek(self, seconds: float):
         target = max(0.0, seconds)
@@ -331,15 +343,29 @@ class PlayerController:
         self._engine.seek(target)
         self._notify_timeline_change()
 
+    @property
+    def muted(self) -> bool:
+        return self._muted
+
+    @property
+    def effective_volume(self) -> int:
+        return 0 if self._muted else self._volume
+
     def set_volume(self, volume: int):
-        clamped = max(0, min(100, volume))
-        self._volume = clamped
-        self._engine.set_volume(clamped)
+        """Moving the volume slider also unmutes, like every desktop player."""
+        self._volume = max(0, min(100, volume))
+        self._muted = False
+        self._engine.set_volume(self._volume)
+
+    def toggle_mute(self):
+        """Mute keeps the chosen level so unmuting restores it."""
+        self._muted = not self._muted
+        self._engine.set_volume(self.effective_volume)
 
     def stop(self):
+        # Keeps _current_track so Play after Stop restarts it.
         self._engine.stop()
         self._state = PlaybackState.STOPPED
-        self._current_track = None
         self._time_pos = 0.0
         self._duration = 0.0
         self._notify_state_change()

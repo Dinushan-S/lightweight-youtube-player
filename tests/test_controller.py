@@ -101,6 +101,66 @@ def test_set_volume_clamps_bounds():
     assert controller.volume == 0
     assert engine.volume == 0
 
+def test_mute_keeps_level_and_slider_unmutes():
+    engine = MockAudioEngine()
+    controller = PlayerController(engine=engine, resolver=MockResolver(), db=DatabaseManager(db_path=":memory:"))
+    controller.set_volume(60)
+
+    controller.toggle_mute()
+    assert controller.muted and engine.volume == 0 and controller.volume == 60
+    controller.toggle_mute()
+    assert not controller.muted and engine.volume == 60
+
+    controller.toggle_mute()
+    controller.set_volume(30)
+    assert not controller.muted and engine.volume == 30
+
+def test_seek_while_paused_stays_paused():
+    controller = PlayerController(engine=MockAudioEngine(), resolver=MockResolver(), db=DatabaseManager(db_path=":memory:"))
+    controller.play_url("https://www.youtube.com/watch?v=test12345")
+    controller.pause()
+    controller._handle_engine_event({"event": "playback-restart"})  # mpv sends this after every seek
+    assert controller.state == PlaybackState.PAUSED
+
+def test_play_after_stop_restarts_last_track():
+    engine = MockAudioEngine()
+    controller = PlayerController(engine=engine, resolver=MockResolver(), db=DatabaseManager(db_path=":memory:"))
+    controller.play_url("https://www.youtube.com/watch?v=test12345")
+    controller.stop()
+    assert controller.state == PlaybackState.STOPPED and engine.loaded_url is None
+
+    controller.toggle_play_pause()
+    assert controller.state == PlaybackState.PLAYING
+    assert engine.loaded_url == "https://audio.googlevideo.com/videoplayback?itag=251"
+
+def test_repeat_replays_single_song_at_end():
+    from src.player.models import RepeatMode
+    engine = MockAudioEngine()
+    controller = PlayerController(engine=engine, resolver=MockResolver(), db=DatabaseManager(db_path=":memory:"))
+    controller.play_url("https://www.youtube.com/watch?v=test12345")
+
+    for mode in (RepeatMode.ONE, RepeatMode.ALL):
+        controller.set_repeat_mode(mode)
+        engine.loaded_url = None
+        controller._handle_engine_event({"event": "end-file", "reason": "eof"})
+        assert controller.state == PlaybackState.PLAYING, mode
+        assert engine.loaded_url == "https://audio.googlevideo.com/videoplayback?itag=251", mode
+
+    controller.set_repeat_mode(RepeatMode.OFF)
+    controller._handle_engine_event({"event": "end-file", "reason": "eof"})
+    assert controller.state == PlaybackState.IDLE
+
+def test_single_song_after_playlist_does_not_resume_old_playlist():
+    engine = MockAudioEngine()
+    controller = PlayerController(engine=engine, resolver=MockResolver(), db=DatabaseManager(db_path=":memory:"))
+    old = [Track(video_id=f"old{i}", title=f"old {i}", channel="c", duration_sec=60, stream_url=f"https://old/{i}") for i in range(3)]
+    controller.load_playlist(old)
+    controller.play_url("https://www.youtube.com/watch?v=test12345")
+
+    controller._handle_engine_event({"event": "end-file", "reason": "eof"})
+    assert controller.state == PlaybackState.IDLE
+    assert controller.current_track.video_id == "test12345"
+
 def test_timeline_and_seek_dispatch():
     engine = MockAudioEngine()
     resolver = MockResolver()

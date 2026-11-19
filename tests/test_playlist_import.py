@@ -177,7 +177,7 @@ def test_linked_song_plays_before_playlist_finishes_loading():
     done = threading.Event()
     ctrl.open_url_async("https://www.youtube.com/watch?v=v1&list=PLabc", on_complete=lambda ok: done.set())
     assert _wait_for(lambda: ctrl.state == PlaybackState.PLAYING)  # playing while the list is still loading
-    assert ctrl.queue_tracks == []
+    assert [t.video_id for t in ctrl.queue_tracks] == ["v1"]  # just the linked song until the list arrives
     gate.set()
     assert done.wait(3.0)
     assert ctrl.queue_index == 1 and len(ctrl.queue_tracks) == 3

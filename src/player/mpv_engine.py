@@ -94,6 +94,7 @@ class MpvEngine:
             "--gapless-audio=yes",
             "--audio-pitch-correction=yes",
             "--force-window=no",
+            "--reset-on-next-file=pause",  # Next/Prev while paused must play the new track
         ]
 
         self._process = subprocess.Popen(

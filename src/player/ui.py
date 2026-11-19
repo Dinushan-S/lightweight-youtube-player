@@ -27,6 +27,7 @@ class MusicPlayerApp(ctk.CTk):
     COLOR_TEXT = "#f8fafc"
     COLOR_TEXT_MUTED = "#94a3b8"
     QUEUE_WINDOW = 60
+    ICON_FONT = "Segoe UI Symbol"  # monochrome media glyphs; plain Segoe UI falls back to colour emoji
 
     def __init__(self, controller: Optional[PlayerController] = None):
         super().__init__()
@@ -88,7 +89,7 @@ class MusicPlayerApp(ctk.CTk):
 
         # Main Content Split (Now Playing Left, History Right)
         self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.content_frame.pack(fill="both", expand=True, padx=20, pady=5)
+        self.content_frame.pack(fill="both", expand=True, padx=20, pady=(5, 15))
 
         # Left: Now Playing Card
         self.card_frame = ctk.CTkFrame(
@@ -234,113 +235,72 @@ class MusicPlayerApp(ctk.CTk):
         )
         self.history_scroll.pack(fill="both", expand=True, padx=6, pady=(0, 10))
 
-        # Bottom Controls Bar
-        self.controls_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.controls_frame.pack(fill="x", padx=20, pady=(5, 15))
+        # Transport row, centred under the seek bar
+        transport = ctk.CTkFrame(self.card_frame, fg_color="transparent")
+        transport.pack(pady=(4, 6))
+        self.shuffle_btn = self._icon_btn(transport, "🔀", self._on_shuffle_click, muted=True)
+        self.prev_btn = self._icon_btn(transport, "⏮", self._on_prev_click)
+        self.toggle_btn = self._icon_btn(transport, "▶", self._on_toggle_play_pause, size=52, font_size=20)
+        self.toggle_btn.configure(fg_color=self.COLOR_ACCENT, hover_color=self.COLOR_ACCENT_HOVER, text_color=self.COLOR_BG)
+        self.stop_btn = self._icon_btn(transport, "⏹", self._on_stop_click)
+        self.next_btn = self._icon_btn(transport, "⏭", self._on_next_click)
+        self.repeat_btn = self._icon_btn(transport, "🔁", self._on_repeat_click, muted=True)
 
-        self.prev_btn = ctk.CTkButton(
-            self.controls_frame,
-            text="⏮",
-            width=40,
-            height=40,
-            fg_color=self.COLOR_CARD,
-            hover_color=self.COLOR_CARD_HOVER,
-            text_color=self.COLOR_TEXT,
-            font=("Segoe UI", 14),
-            command=self._on_prev_click,
-        )
-        self.prev_btn.pack(side="left", padx=(0, 6))
-
-        self.toggle_btn = ctk.CTkButton(
-            self.controls_frame,
-            text="▶",
-            width=50,
-            height=40,
-            fg_color=self.COLOR_CARD,
-            hover_color=self.COLOR_CARD_HOVER,
-            text_color=self.COLOR_TEXT,
-            font=("Segoe UI", 16, "bold"),
-            command=self._on_toggle_play_pause,
-        )
-        self.toggle_btn.pack(side="left", padx=(0, 6))
-
-        self.next_btn = ctk.CTkButton(
-            self.controls_frame,
-            text="⏭",
-            width=40,
-            height=40,
-            fg_color=self.COLOR_CARD,
-            hover_color=self.COLOR_CARD_HOVER,
-            text_color=self.COLOR_TEXT,
-            font=("Segoe UI", 14),
-            command=self._on_next_click,
-        )
-        self.next_btn.pack(side="left", padx=(0, 6))
-
-        self.stop_btn = ctk.CTkButton(
-            self.controls_frame,
-            text="⏹",
-            width=40,
-            height=40,
-            fg_color=self.COLOR_CARD,
-            hover_color=self.COLOR_CARD_HOVER,
-            text_color=self.COLOR_TEXT_MUTED,
-            font=("Segoe UI", 14),
-            command=self._on_stop_click,
-        )
-        self.stop_btn.pack(side="left", padx=(0, 14))
-
-        self.shuffle_btn = ctk.CTkButton(
-            self.controls_frame,
-            text="Shuffle: Off",
-            width=96,
-            height=40,
-            fg_color=self.COLOR_CARD,
-            hover_color=self.COLOR_CARD_HOVER,
-            text_color=self.COLOR_TEXT_MUTED,
-            font=("Segoe UI", 11, "bold"),
-            command=self._on_shuffle_click,
-        )
-        self.shuffle_btn.pack(side="left", padx=(0, 6))
-
-        self.repeat_btn = ctk.CTkButton(
-            self.controls_frame,
-            text="Repeat: Off",
-            width=96,
-            height=40,
-            fg_color=self.COLOR_CARD,
-            hover_color=self.COLOR_CARD_HOVER,
-            text_color=self.COLOR_TEXT_MUTED,
-            font=("Segoe UI", 11, "bold"),
-            command=self._on_repeat_click,
-        )
-        self.repeat_btn.pack(side="left", padx=(0, 20))
-
-        self.vol_label = ctk.CTkLabel(
-            self.controls_frame,
-            text="🔊",
-            font=("Segoe UI", 14),
-            text_color=self.COLOR_TEXT_MUTED,
-        )
-        self.vol_label.pack(side="left", padx=(0, 8))
-
+        # Volume row: mute toggle, slider (mouse wheel = ±5), level readout
+        volume_row = ctk.CTkFrame(self.card_frame, fg_color="transparent")
+        volume_row.pack(pady=(0, 15))
+        self.mute_btn = self._icon_btn(volume_row, "🔊", self._on_mute_click, size=32, font_size=14)
         self.volume_slider = ctk.CTkSlider(
-            self.controls_frame,
+            volume_row,
             from_=0,
             to=100,
             number_of_steps=100,
-            width=140,
+            width=160,
             progress_color=self.COLOR_ACCENT,
             button_color=self.COLOR_ACCENT,
             button_hover_color=self.COLOR_ACCENT_HOVER,
             command=self._on_volume_change,
         )
-        self.volume_slider.set(100)
-        self.volume_slider.pack(side="left")
+        self.volume_slider.set(self.controller.volume)
+        self.volume_slider.pack(side="left", padx=(4, 8))
+        self.volume_slider.bind("<MouseWheel>", lambda e: self._on_volume_change(self.controller.volume + (5 if e.delta > 0 else -5)))
+        self.vol_pct_label = ctk.CTkLabel(
+            volume_row,
+            text="",
+            width=48,
+            anchor="w",
+            font=("Segoe UI", 11, "bold"),
+            text_color=self.COLOR_TEXT_MUTED,
+        )
+        self.vol_pct_label.pack(side="left")
+        self._refresh_volume_ui()
+
+    def _icon_btn(self, parent, text, command, size=40, font_size=16, muted=False):
+        btn = ctk.CTkButton(
+            parent,
+            text=text,
+            width=size,
+            height=size,
+            corner_radius=size // 2,
+            fg_color="transparent",
+            hover_color=self.COLOR_CARD_HOVER,
+            text_color=self.COLOR_TEXT_MUTED if muted else self.COLOR_TEXT,
+            font=(self.ICON_FONT, font_size),
+            command=command,
+        )
+        btn.pack(side="left", padx=4)
+        return btn
 
     def _on_play_click(self):
+        if self.play_url_btn.cget("state") == "disabled":
+            return  # already resolving a link
         url = self.url_entry.get().strip()
         if not url:
+            # Nothing pasted: resume where the user left off.
+            last = self.controller.get_history(limit=1)
+            if not last:
+                return
+            self._play_from_history(last[0])
             return
 
         self.play_url_btn.configure(state="disabled", text="Loading...")
@@ -358,7 +318,10 @@ class MusicPlayerApp(ctk.CTk):
         self.controller.open_url_async(url, on_complete=on_done)
 
     def _on_toggle_play_pause(self):
-        self.controller.toggle_play_pause()
+        if self.controller.current_track is None:
+            self._on_play_click()  # nothing loaded yet: pasted link, else last history song
+        else:
+            self.controller.toggle_play_pause()
 
     def _on_stop_click(self):
         self.controller.stop()
@@ -435,19 +398,29 @@ class MusicPlayerApp(ctk.CTk):
                 text_color=self.COLOR_TEXT_MUTED,
             ).pack(pady=8)
 
-        shuffle_on = self.controller.is_shuffle
         self.shuffle_btn.configure(
-            text=f"Shuffle: {'On' if shuffle_on else 'Off'}",
-            text_color=self.COLOR_ACCENT if shuffle_on else self.COLOR_TEXT_MUTED,
+            text_color=self.COLOR_ACCENT if self.controller.is_shuffle else self.COLOR_TEXT_MUTED,
         )
         repeat = self.controller.repeat_mode
         self.repeat_btn.configure(
-            text=f"Repeat: {repeat.value.title()}",
+            text="🔂" if repeat == RepeatMode.ONE else "🔁",
             text_color=self.COLOR_TEXT_MUTED if repeat == RepeatMode.OFF else self.COLOR_ACCENT,
         )
 
     def _on_volume_change(self, val):
         self.controller.set_volume(int(val))
+        self.volume_slider.set(self.controller.volume)  # mouse-wheel path doesn't move the slider itself
+        self._refresh_volume_ui()
+
+    def _on_mute_click(self):
+        self.controller.toggle_mute()
+        self._refresh_volume_ui()
+
+    def _refresh_volume_ui(self):
+        vol, muted = self.controller.volume, self.controller.muted
+        icon = "🔇" if muted or vol == 0 else ("🔉" if vol < 50 else "🔊")
+        self.mute_btn.configure(text=icon, text_color=self.COLOR_ACCENT if muted else self.COLOR_TEXT)
+        self.vol_pct_label.configure(text="Muted" if muted else f"{vol}%")
 
     def _on_seek_drag(self, val):
         self._is_seeking = True
@@ -481,7 +454,7 @@ class MusicPlayerApp(ctk.CTk):
                 self.status_label.configure(text="PAUSED")
             else:
                 self.toggle_btn.configure(text="▶")
-                self.status_label.configure(text="IDLE")
+                self.status_label.configure(text=state.value)  # IDLE or STOPPED
 
             if track:
                 self.title_label.configure(text=track.title)
@@ -554,13 +527,13 @@ class MusicPlayerApp(ctk.CTk):
 
             # Click item to replay track
             for w in (item_frame, t_lbl, m_lbl):
-                w.bind("<Button-1>", lambda e, url=track.stream_url: self._play_from_history(url))
+                w.bind("<Button-1>", lambda e, t=track: self._play_from_history(t))
 
-    def _play_from_history(self, url: Optional[str]):
-        if url:
-            self.url_entry.delete(0, "end")
-            self.url_entry.insert(0, url)
-            self._on_play_click()
+    def _play_from_history(self, track: Track):
+        # The saved stream URL expires within hours; the watch link always re-resolves.
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, f"https://www.youtube.com/watch?v={track.video_id}")
+        self._on_play_click()
 
     def _on_close(self):
         self.controller.stop()
