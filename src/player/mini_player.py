@@ -1,10 +1,6 @@
-import io
-import threading
-import urllib.request
 import customtkinter as ctk
-from PIL import Image
 from src.player.models import PlaybackState
-from src.player.ui import format_time
+from src.player.ui import format_time, Icon
 
 
 class MiniPlayer(ctk.CTkToplevel):
@@ -24,18 +20,18 @@ class MiniPlayer(ctk.CTkToplevel):
         self.c = app.controller
         self._list_open = False
         self._list_key = None
-        self._thumbs = {}            # video_id -> "loading" | bytes | CTkImage
         self._shown_thumb = None
+        t = app.t
         self._drag_dx = None
 
         self.overrideredirect(True)  # no title bar
         self.attributes("-topmost", True)
-        self.configure(fg_color=app.COLOR_CARD)
+        self.configure(fg_color=t["surface"])
 
         # Always visible: the progress line
         self.line = ctk.CTkProgressBar(
             self, width=self.WIDTH, height=self.LINE_HEIGHT, corner_radius=0,
-            progress_color=app.COLOR_ACCENT, fg_color="#1e293b",
+            progress_color=t["accent"], fg_color=t["track"],
         )
         self.line.set(0)
         self.line.pack(side="bottom", fill="x")
@@ -45,17 +41,17 @@ class MiniPlayer(ctk.CTkToplevel):
         header = ctk.CTkFrame(self.panel, fg_color="transparent")
         header.pack(fill="x", padx=10, pady=(10, 4))
         self.cover = ctk.CTkLabel(
-            header, text="♪", width=64, height=36, corner_radius=6,
-            fg_color="#0f172a", text_color=app.COLOR_ACCENT, font=("Segoe UI", 16),
+            header, text=Icon.MUSIC, width=64, height=36, corner_radius=min(t["radius"], 6),
+            fg_color=t["raised"], text_color=t["muted"], font=(app.ICON_FONT, 14),
         )
         self.cover.pack(side="left")
         info = ctk.CTkFrame(header, fg_color="transparent")
         info.pack(side="left", fill="x", expand=True, padx=8)
-        self.title_label = ctk.CTkLabel(info, text="", anchor="w", font=("Segoe UI", 12, "bold"), text_color=app.COLOR_TEXT)
+        self.title_label = app._label(info, size=12, bold=True, anchor="w")
         self.title_label.pack(fill="x")
-        self.channel_label = ctk.CTkLabel(info, text="", anchor="w", font=("Segoe UI", 10), text_color=app.COLOR_TEXT_MUTED)
+        self.channel_label = app._label(info, size=10, muted=True, anchor="w")
         self.channel_label.pack(fill="x")
-        app._icon_btn(header, "⤢", self._restore, size=28, font_size=13, muted=True)
+        app._icon_btn(header, Icon.RESTORE, self._restore, size=28, font_size=12, muted=True)
         for w in (header, self.cover, info, self.title_label, self.channel_label):
             w.bind("<ButtonPress-1>", self._drag_start)
             w.bind("<B1-Motion>", self._drag_move)
@@ -65,35 +61,35 @@ class MiniPlayer(ctk.CTkToplevel):
         # One compact row: ⏮ ⏸ ⏭  🔊 ─── volume  ·  Playlist ▾  (time sits under the title)
         controls = ctk.CTkFrame(self.panel, fg_color="transparent")
         controls.pack(fill="x", padx=6, pady=(0, 8))
-        app._icon_btn(controls, "⏮", self.c.prev_track, size=34, font_size=14)
-        self.toggle_btn = app._icon_btn(controls, "▶", app._on_toggle_play_pause, size=34, font_size=14)
-        app._icon_btn(controls, "⏭", self.c.next_track, size=34, font_size=14)
-        self.mute_btn = app._icon_btn(controls, "🔊", app._on_mute_click, size=28, font_size=12)
+        app._icon_btn(controls, Icon.PREV, self.c.prev_track, size=34, font_size=13)
+        self.toggle_btn = app._icon_btn(controls, Icon.PLAY, app._on_toggle_play_pause, size=34, font_size=13)
+        self.toggle_btn.configure(fg_color=t["accent"], hover_color=t["accent_hover"], text_color=t["on_accent"])
+        app._icon_btn(controls, Icon.NEXT, self.c.next_track, size=34, font_size=13)
+        self.fav_btn = app._icon_btn(controls, Icon.HEART, app.toggle_favorite, size=28, font_size=12, muted=True)
+        self.mute_btn = app._icon_btn(controls, Icon.VOLUME_3, app._on_mute_click, size=28, font_size=12)
         self.list_btn = ctk.CTkButton(
-            controls, text="Playlist ▾", width=84, height=28, corner_radius=14,
-            fg_color="#0f172a", hover_color=app.COLOR_CARD_HOVER, text_color=app.COLOR_TEXT,
-            font=("Segoe UI", 11), command=self._toggle_list,
+            controls, text="Playlist", width=76, height=28, corner_radius=14,
+            fg_color=t["raised"], hover_color=t["hover"], text_color=t["text"],
+            font=(app.FONT, 11), command=self._toggle_list,
         )
         self.list_btn.pack(side="right", padx=4)
 
         # Volume bar: hidden until the mouse is over the 🔊 icon, then shown just below it.
         # Shares the main window's handlers, so both windows stay in sync.
         self.vol_row = ctk.CTkFrame(self.panel, fg_color="transparent")
-        self.volume_slider = ctk.CTkSlider(
-            self.vol_row, from_=0, to=100, number_of_steps=100, width=120, height=14,
-            progress_color=app.COLOR_ACCENT, button_color=app.COLOR_ACCENT,
-            button_hover_color=app.COLOR_ACCENT_HOVER, command=app._on_volume_change,
-        )
+        self.volume_slider = app._slider(self.vol_row, from_=0, to=100, number_of_steps=100, width=120, height=14,
+                                         command=app._on_volume_change)
         self.volume_slider.pack(side="left")
         self.volume_slider.bind("<MouseWheel>", app.on_volume_wheel)  # works once the dock has focus (after a click)
-        self.vol_label = ctk.CTkLabel(self.vol_row, text="", width=44, font=("Segoe UI", 10, "bold"),
-                                      text_color=app.COLOR_TEXT_MUTED)
+        self.vol_label = app._label(self.vol_row, size=10, bold=True, muted=True, width=44)
         self.vol_label.pack(side="left", padx=(6, 0))
         self.mute_btn.bind("<Enter>", lambda e: self._show_volume())
         for w in (self.mute_btn, self.vol_row, self.volume_slider, self.vol_label):
             w.bind("<Leave>", lambda e: self.after(300, self._hide_volume_if_away), add="+")
 
-        self.list_frame = ctk.CTkScrollableFrame(self.panel, height=220, fg_color="#0f172a", corner_radius=8)
+        self.list_frame = ctk.CTkScrollableFrame(self.panel, height=220, fg_color=t["raised"],
+                                                 corner_radius=min(t["radius"], 10),
+                                                 scrollbar_button_color=t["track"], scrollbar_button_hover_color=t["hover"])
 
         self.bind("<Enter>", lambda e: self._expand())
         self.bind("<Leave>", lambda e: self.after(250, self._collapse_if_outside))
@@ -162,7 +158,7 @@ class MiniPlayer(ctk.CTkToplevel):
             self._render_list()
         else:
             self.list_frame.pack_forget()
-        self.list_btn.configure(text="Playlist ▴" if self._list_open else "Playlist ▾")
+        self.list_btn.configure(fg_color=self.app.t["active_row"] if self._list_open else self.app.t["raised"])
 
     def _render_list(self):
         tracks, active = self.c.queue_tracks, self.c.queue_index
@@ -173,16 +169,16 @@ class MiniPlayer(ctk.CTkToplevel):
         for w in self.list_frame.winfo_children():
             w.destroy()
         if not tracks:
-            ctk.CTkLabel(self.list_frame, text="No playlist loaded", font=("Segoe UI", 11),
-                         text_color=self.app.COLOR_TEXT_MUTED).pack(pady=12)
+            self.app._label(self.list_frame, "No playlist loaded", size=11, muted=True).pack(pady=12)
             return
         first = max(0, active - 3)
+        th = self.app.t
         for i, t in enumerate(tracks[first:first + self.LIST_ROWS], start=first):
             ctk.CTkButton(
                 self.list_frame, text=f"{i + 1}. {self._short(t.title, 40)}", anchor="w", height=26,
-                fg_color="transparent", hover_color=self.app.COLOR_CARD_HOVER,
-                text_color=self.app.COLOR_ACCENT if i == active else self.app.COLOR_TEXT,
-                font=("Segoe UI", 11, "bold" if i == active else "normal"),
+                fg_color=th["active_row"] if i == active else "transparent", hover_color=th["hover"],
+                text_color=th["accent"] if i == active else th["text"],
+                font=(self.app.FONT, 11, "bold" if i == active else "normal"),
                 command=lambda i=i: self.c.play_queue_index(i),
             ).pack(fill="x")
 
@@ -203,10 +199,12 @@ class MiniPlayer(ctk.CTkToplevel):
             text=f"{self._short(t.channel, 22)}  ·  {format_time(self.c.time_pos)} / {format_time(self.c.duration)}"
             if t else "Hover here any time"
         )
-        self.toggle_btn.configure(text="⏸" if self.c.state == PlaybackState.PLAYING else "▶")
+        self.toggle_btn.configure(text=Icon.PAUSE if self.c.state == PlaybackState.PLAYING else Icon.PLAY)
         self.volume_slider.set(self.c.volume)
         self.mute_btn.configure(text=self.app.volume_icon(),
-                                text_color=self.app.COLOR_ACCENT if self.c.muted else self.app.COLOR_TEXT)
+                                text_color=self.app.t["accent"] if self.c.muted else self.app.t["text"])
+        # The heart mirrors the main window's, which follows every favorites change
+        self.fav_btn.configure(text=self.app.fav_btn.cget("text"), text_color=self.app.fav_btn.cget("text_color"))
         self.vol_label.configure(text=self.app.volume_text())
         if t:
             self._show_cover(t.video_id)
@@ -216,23 +214,10 @@ class MiniPlayer(ctk.CTkToplevel):
     def _show_cover(self, video_id):
         if video_id == self._shown_thumb:
             return
-        cached = self._thumbs.get(video_id)
-        if cached is None:
-            self._thumbs[video_id] = "loading"
-            threading.Thread(target=self._fetch_cover, args=(video_id,), daemon=True).start()
-        elif isinstance(cached, bytes) and cached:
-            self._thumbs[video_id] = cached = ctk.CTkImage(Image.open(io.BytesIO(cached)), size=(64, 36))
-        if isinstance(cached, ctk.CTkImage):
-            self.cover.configure(image=cached, text="")
+        img = self.app.covers.get(video_id, (64, 36))
+        if img:
+            self.cover.configure(image=img, text="")
             self._shown_thumb = video_id
-
-    def _fetch_cover(self, video_id):
-        # Worker thread: only stores bytes; the Tk thread turns them into an image on the next tick.
-        try:
-            with urllib.request.urlopen(f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg", timeout=10) as r:
-                self._thumbs[video_id] = r.read()
-        except OSError:
-            self._thumbs[video_id] = b""  # no cover; keep the ♪
 
     @staticmethod
     def _short(text, n):

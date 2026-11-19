@@ -101,6 +101,21 @@ class QueueManager:
             self._shuffle_pos = 0
         return self.current_track
 
+    def remove(self, index: int) -> Optional[Track]:
+        """Remove the track at `index`. The playing song keeps playing; Next continues after it."""
+        if not 0 <= index < len(self._tracks):
+            return None
+        removed = self._tracks.pop(index)
+        if index <= self._current_index:
+            # Removing the current song steps back one, so next_track() lands on the song that slid into its place.
+            self._current_index -= 1
+        if not self._tracks:
+            self._current_index = -1
+        if self._is_shuffle:
+            self._rebuild_shuffle_order()
+            self._shuffle_pos = 0
+        return removed
+
     def toggle_shuffle(self):
         """Toggle shuffle mode on/off. When enabled, shuffles remaining tracks keeping current track."""
         self._is_shuffle = not self._is_shuffle

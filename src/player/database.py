@@ -64,6 +64,14 @@ class DatabaseManager:
                     track_order INTEGER
                 );
 
+                CREATE TABLE IF NOT EXISTS favorites (
+                    video_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    channel TEXT,
+                    duration_sec INTEGER,
+                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
@@ -166,3 +174,46 @@ class DatabaseManager:
         """Delete a playlist and its tracks (cascade)."""
         with self._get_connection() as conn:
             conn.execute("DELETE FROM playlists WHERE id = ?", (playlist_id,))
+
+    def remove_playlist_track(self, playlist_id: str, video_id: str):
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ? AND video_id = ?", (playlist_id, video_id))
+
+    # --- Settings ---
+
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            return row["value"] if row else default
+
+    def set_setting(self, key: str, value: str):
+        with self._get_connection() as conn:
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+
+    # --- Favorites ---
+
+    def set_favorite(self, track: Track, on: bool):
+        with self._get_connection() as conn:
+            if on:
+                conn.execute("""
+                    INSERT OR IGNORE INTO favorites (video_id, title, channel, duration_sec)
+                    VALUES (?, ?, ?, ?)
+                """, (track.video_id, track.title, track.channel, track.duration_sec))
+            else:
+                conn.execute("DELETE FROM favorites WHERE video_id = ?", (track.video_id,))
+
+    def is_favorite(self, video_id: str) -> bool:
+        with self._get_connection() as conn:
+            return conn.execute("SELECT 1 FROM favorites WHERE video_id = ?", (video_id,)).fetchone() is not None
+
+    def get_favorites(self) -> List[Track]:
+        """Newest favorite first."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT video_id, title, channel, duration_sec FROM favorites ORDER BY added_at DESC, rowid DESC"
+            ).fetchall()
+            return [
+                Track(video_id=r["video_id"], title=r["title"], channel=r["channel"] or "Unknown Artist",
+                      duration_sec=r["duration_sec"] or 0)
+                for r in rows
+            ]

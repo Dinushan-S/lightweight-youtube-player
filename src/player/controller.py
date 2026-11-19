@@ -32,6 +32,8 @@ class PlayerController:
         self._timeline_listeners: List[Callable[[float, float], None]] = []
         self._history_listeners: List[Callable[[], None]] = []
         self._queue_listeners: List[Callable[[], None]] = []
+        self._favorites_listeners: List[Callable[[], None]] = []
+        self._playlist_id: Optional[str] = None  # stored playlist the queue came from, if any
 
         # If engine supports event listeners, register our event bridge
         if hasattr(self._engine, "add_event_listener"):
@@ -84,6 +86,9 @@ class PlayerController:
 
     def add_queue_listener(self, listener: Callable[[], None]):
         self._queue_listeners.append(listener)
+
+    def add_favorites_listener(self, listener: Callable[[], None]):
+        self._favorites_listeners.append(listener)
 
     def _notify_history_change(self):
         for listener in self._history_listeners:
@@ -189,6 +194,7 @@ class PlayerController:
     def load_playlist(self, tracks: List[Track], start_index: int = 0, play: bool = True):
         """Load a list of tracks into the queue and (unless play=False) start playing."""
         self._queue.load_tracks(tracks, start_index=start_index)
+        self._playlist_id = None
         current = self._queue.current_track
         if current and play:
             self._play_track(current)
@@ -214,6 +220,35 @@ class PlayerController:
         if track:
             self._play_track(track)
             self._notify_queue_change()
+
+    def remove_from_queue(self, index: int):
+        """Delete a song from the queue, and from the saved playlist when the queue is one."""
+        removed = self._queue.remove(index)
+        if removed is None:
+            return
+        if self._playlist_id:
+            self._db.remove_playlist_track(self._playlist_id, removed.video_id)
+        self._notify_queue_change()
+
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        return self._db.get_setting(key, default)
+
+    def set_setting(self, key: str, value: str):
+        self._db.set_setting(key, value)
+
+    def is_favorite(self, video_id: str) -> bool:
+        return self._db.is_favorite(video_id)
+
+    def get_favorites(self) -> List[Track]:
+        return self._db.get_favorites()
+
+    def set_favorite(self, track: Track, on: bool):
+        self._db.set_favorite(track, on)
+        for listener in self._favorites_listeners:
+            try:
+                listener()
+            except Exception as e:
+                print(f"[Controller Favorites Listener Error] {e}")
 
     def set_repeat_mode(self, mode: RepeatMode):
         self._queue.repeat_mode = mode
@@ -256,6 +291,7 @@ class PlayerController:
         if track and track.stream_url:
             # A single song is a one-track queue, so Repeat works and an old playlist doesn't take over at its end.
             self._queue.load_tracks([replace(track, stream_url="")])
+            self._playlist_id = None
             self._play_track(track)
             self._notify_queue_change()
             return track
@@ -312,6 +348,7 @@ class PlayerController:
             self.load_playlist(tracks, start_index=start, play=False)  # already playing it
         else:
             self.load_playlist(tracks, start_index=start or 0)
+        self._playlist_id = playlist_id
         return True
 
     def pause(self):
