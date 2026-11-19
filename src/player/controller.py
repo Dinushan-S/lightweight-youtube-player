@@ -1,5 +1,6 @@
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Optional, Any, Callable, List
 from urllib.parse import urlparse, parse_qs
@@ -7,6 +8,7 @@ from src.player.models import PlaybackState, Track, RepeatMode
 from src.player.mpv_engine import MpvEngine
 from src.player.resolver import StreamResolver
 from src.player.database import DatabaseManager
+from src.player.google_account import GoogleAccount, SignedOut
 from src.player.queue_manager import QueueManager
 
 
@@ -18,10 +20,14 @@ def is_playlist_url(url: str) -> bool:
 class PlayerController:
     """The central orchestrator managing playback state, queue, timeline, and user commands."""
 
-    def __init__(self, engine: Optional[Any] = None, resolver: Optional[Any] = None, db: Optional[Any] = None):
+    def __init__(self, engine: Optional[Any] = None, resolver: Optional[Any] = None, db: Optional[Any] = None,
+                 google_client: Optional[dict] = None, google_http: Optional[Callable] = None):
         self._engine = engine or MpvEngine()
         self._resolver = resolver or StreamResolver()
         self._db = db or DatabaseManager()
+        # Google account sync is only offered when a client_secret*.json was supplied
+        self._google = (GoogleAccount(google_client, self._db, **({"http": google_http} if google_http else {}))
+                        if google_client else None)
         self._queue = QueueManager()
         self._state = PlaybackState.IDLE
         self._current_track: Optional[Track] = None
@@ -324,6 +330,96 @@ class PlayerController:
             if self._playlist_id:
                 self._db.set_playlist_tracks(self._playlist_id, self._queue.tracks)
             self._notify_queue_change()
+
+    # --- Google account (your YouTube playlists and liked videos) ---------------------
+    @property
+    def google_available(self) -> bool:
+        return self._google is not None
+
+    @property
+    def google_connected(self) -> bool:
+        return bool(self._google and self._google.connected)
+
+    def sync_google(self) -> int:
+        """Copy the account's music into the player; returns how many playlists.
+
+        Music only: a playlist comes in when at least half its playable videos are in YouTube's Music
+        category, with just those songs; liked videos become "Liked music". Each sync replaces the
+        stored copies and drops ones no longer wanted. Raises SignedOut.
+        """
+        g = self._google
+        if not g:
+            raise SignedOut("Google sign-in isn't set up")
+        lists = g.playlists()
+        with ThreadPoolExecutor(8) as pool:  # ~2 API calls per playlist; one at a time took minutes for 190
+            fetched = list(pool.map(lambda p: g.playlist_tracks(p[0]), lists))
+        wanted = [(f"google-{pid}", title, songs) for (pid, title), (songs, playable) in zip(lists, fetched)
+                  if songs and 2 * len(songs) >= playable]
+        liked, _ = g.liked()
+        if liked:
+            wanted.append(("google-LL", "Liked music", liked))  # LL = YouTube's own id for liked videos
+        self._drop_google_playlists(keep={pid for pid, _, _ in wanted})
+        for pid, title, tracks in wanted:
+            self._db.create_playlist(pid, title, source_type="google",
+                                     source_url=f"https://www.youtube.com/playlist?list={pid[7:]}")
+            self._db.set_playlist_tracks(pid, tracks)
+        self._call_all(self._playlists_listeners, "Playlists")
+        return len(wanted)
+
+    def _google_worker(self, sign_in: Optional[Callable[[], None]], on_complete: Optional[Callable[[bool, str], None]]):
+        def worker():
+            try:
+                if sign_in:
+                    sign_in()
+                n = self.sync_google()
+                ok, msg = True, f"Google: {n} playlist{'' if n == 1 else 's'} synced"
+            except SignedOut as e:
+                ok, msg = False, ("Google sign-in expired. Connect again." if "sign-in expired" in str(e)
+                                  else f"Google sign-in didn't finish ({e})")
+                self._call_all(self._playlists_listeners, "Playlists")
+            except Exception as e:
+                print(f"[Controller] Google sync failed: {e}")
+                ok, msg = False, "Couldn't reach Google. Try again later."
+            if on_complete:
+                on_complete(ok, msg)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def connect_google_async(self, on_code: Callable[[str, str], None],
+                             on_complete: Optional[Callable[[bool, str], None]] = None,
+                             on_signed_in: Optional[Callable[[], None]] = None) -> threading.Event:
+        """Get a sign-in code (on_code(code, url) shows it), wait for the user to enter it
+        (then on_signed_in()), then sync. Set the returned event to give up waiting.
+        """
+        cancel = threading.Event()
+
+        def sign_in():
+            start = self._google.start_sign_in()
+            on_code(start["user_code"], start["verification_url"])
+            self._google.finish_sign_in(start, cancel)
+            if on_signed_in:
+                on_signed_in()
+
+        self._google_worker(sign_in, on_complete)
+        return cancel
+
+    def sync_google_async(self, on_complete: Optional[Callable[[bool, str], None]] = None):
+        self._google_worker(None, on_complete)
+
+    def disconnect_google(self):
+        """Forget the sign-in and remove the synced playlists (History and Favorites stay)."""
+        if self._google:
+            self._google.sign_out()
+        self._drop_google_playlists(keep=set())
+        self._call_all(self._playlists_listeners, "Playlists")
+
+    def _drop_google_playlists(self, keep: set):
+        """Delete synced Google playlists not in `keep`, without a UI refresh per playlist (callers notify once)."""
+        for p in self._db.get_playlists():
+            if p["source_type"] == "google" and p["id"] not in keep:
+                self._db.delete_playlist(p["id"])
+                if self._playlist_id == p["id"]:
+                    self._playlist_id = None
 
     # --- window view (full window or docked mini player) ---------------------------
     @property

@@ -7,6 +7,8 @@ __pycache__/
 *.db
 *.log
 bin/
+# Google OAuth client (has a client secret); bundled into the .exe by build.ps1, never committed
+client_secret*.json
 
 # Build output
 build/

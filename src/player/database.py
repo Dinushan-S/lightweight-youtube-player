@@ -1,7 +1,23 @@
 import sqlite3
 import os
+import threading
 from typing import List, Optional, Dict, Any
 from src.player.models import Track
+
+
+class _LockedConnection(sqlite3.Connection):
+    """A connection shared across threads: each `with conn:` block holds `lock` until it commits."""
+    lock: threading.RLock
+
+    def __enter__(self):
+        self.lock.acquire()
+        return super().__enter__()
+
+    def __exit__(self, *exc):
+        try:
+            return super().__exit__(*exc)
+        finally:
+            self.lock.release()
 
 DEFAULT_DB_PATH = os.path.join(
     os.path.expanduser("~"), ".local_ytplayer", "player.db"
@@ -16,8 +32,10 @@ class DatabaseManager:
         if self.db_path != ":memory:":
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         else:
-            # Controller writes from worker threads, so the shared in-memory connection must allow it.
-            self._memory_conn = sqlite3.connect(":memory:", check_same_thread=False)
+            # Controller writes from worker threads, so the shared in-memory connection must allow it,
+            # one `with` block at a time (else one thread commits another's transaction mid-way).
+            self._memory_conn = sqlite3.connect(":memory:", check_same_thread=False, factory=_LockedConnection)
+            self._memory_conn.lock = threading.RLock()
             self._memory_conn.row_factory = sqlite3.Row
             self._memory_conn.execute("PRAGMA foreign_keys = ON")
         self._init_db()

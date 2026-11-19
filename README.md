@@ -19,6 +19,7 @@ No installation is needed: download it and double-click. All releases are on the
 - **Controls:** play / pause, previous, next, shuffle, repeat (off, all, one), seek, volume with mute and mouse-wheel steps.
 - **Docked mini player:** one click (or **Ctrl+M**) hides the window and pins a thin progress line to the top of your screen. Hover it for the cover, controls, volume, favorite and the playlist; drag it anywhere along the top; unpin it if you don't want it always on top.
 - **Your own playlists:** make playlists in the Playlists tab and add songs with ＋ or by right-clicking any song. Reorder with Move up / Move down, remove with ✕.
+- **Your YouTube playlists (optional):** connect your Google account with a code at google.com/device, and your music playlists (private ones too) and liked songs show up in the Playlists tab. Read-only. Needs a Google client file, see [Google sign-in](#google-sign-in-optional).
 - **Works in the background:** keyboard and headset media keys control it from any app, and closing or minimizing hides it to the system tray (right-click the tray icon to quit).
 - **Favorites:** heart a song from the main window or the dock; find it again in the Favorites tab.
 - **History:** every song you played, searchable. Press Play with an empty link box to pick up your last song.
@@ -75,6 +76,17 @@ Build the `.exe` (output: `dist\LightweightYouTubePlayer.exe`):
 .\.venv\Scripts\python -m pip install pyinstaller
 .\build.ps1
 ```
+
+### Google sign-in (optional)
+
+The Google button only appears when the app finds a Google OAuth client file. To make your own:
+
+1. In [Google Cloud](https://console.cloud.google.com), create a project and enable **YouTube Data API v3**.
+2. Set up the **OAuth consent screen** (External, Testing) with the scope `.../auth/youtube.readonly`, and add your Google account under **Test users**.
+3. Create an **OAuth client ID** of type **TVs and Limited Input devices** and download its JSON.
+4. Put the `client_secret_….json` file in the project folder. It's gitignored, and `build.ps1` bundles it into the `.exe`.
+
+In Testing mode Google ends the sign-in after 7 days, so you connect again once a week.
 
 ## How it works
 

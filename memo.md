@@ -63,6 +63,19 @@ _Last updated: 2026-11-19_
 - **Editing an open playlist** (in the Tracklist): right-click a song → **Move up / Move down / Remove**, or click its ✕. Every change is saved to the playlist right away, in order. Adding a song to the open playlist also adds it to the end of the queue.
 - The same song can be in a playlist more than once.
 
+### Google account (your YouTube playlists and liked videos)
+- **Google ▾** button in the Playlists tab (next to + New playlist) → **Connect Google account…**
+  - A small window shows a code like `FJH-BSL-PZVW`. The code is already copied and **google.com/device** opens in your browser: paste the code, pick your account, click **Allow**. The window closes by itself and your playlists appear. **Cancel** stops waiting.
+  - Access is **read-only** (`youtube.readonly`): the player can't change anything on your account.
+- After connecting you get your **music playlists** (private ones too) plus **Liked music**, marked "· from YouTube". Click to play, like any playlist.
+  - **Music only:** a song counts when YouTube files the video under its **Music** category. A playlist comes in when at least half of its videos are songs, and then only its songs. Liked music = the songs among your liked videos. So learning, tutorial and editing playlists stay out.
+  - The window closes as soon as you're signed in; the status line shows "Getting your music playlists from YouTube…" while it fetches (~30 s for ~190 playlists, 8 at a time).
+- **Sync:** automatic each time the player starts, or **Google ▾ → Sync now**. Each sync replaces the copies; playlists you deleted on YouTube (or that stopped being mostly music) disappear.
+- **Disconnect…** forgets the sign-in (also tells Google) and removes the synced playlists. History and Favorites stay.
+- The sign-in is saved **encrypted with Windows** (only your Windows account on this PC can read it).
+- The Google button only shows when a Google client file (`client_secret*.json`) is next to the app (source) or bundled in the `.exe`.
+- **Google Cloud setup:** YouTube Data API v3 on, OAuth consent screen in **Testing** with your account as a test user, client type **TVs and Limited Input devices** (the only type that allows code sign-in).
+
 ### Removing songs from a playlist
 - Every row in the **Tracklist** tab has an **✕**. It removes that song from the queue **and** from the saved copy of the playlist.
 - Removing the song that is playing doesn't stop it; Next continues with the song that took its place.
@@ -106,10 +119,10 @@ _Last updated: 2026-11-19_
 - **History:** every song you played, newest first, with a search box (title or channel). Click a song to play it again (it fetches a fresh stream, because saved stream addresses expire after a few hours).
 - **Tracklist:** the current queue. The playing song is highlighted; click any song to jump to it, ✕ to remove it. Big playlists show 60 songs around the current one ("Showing 1–60 of 1328").
 - **Favorites:** your hearted songs (see above).
-- **Playlists:** your own and imported playlists (see above).
+- **Playlists:** your own, imported and Google playlists (see above).
 
 ### Saved data
-- History, your playlists, imported playlists, favorites, the chosen theme and the dock pin are stored in SQLite at `~/.local_ytplayer/player.db`.
+- History, your playlists, imported and Google playlists, favorites, the chosen theme, the dock pin and the encrypted Google sign-in are stored in SQLite at `~/.local_ytplayer/player.db`.
 - Importing the same playlist again replaces the saved copy (no duplicates). Deleted or private videos in a playlist are skipped.
 
 ---
@@ -122,9 +135,10 @@ _Last updated: 2026-11-19_
 - **Playing audio:** a hidden `mpv` process (`bin/mpv.exe`) controlled through a named pipe (`src/player/mpv_engine.py`).
 - **Storage:** `src/player/database.py` (history, playlists, favorites, settings).
 - **Media keys and tray:** `src/player/desktop.py` (media keys via Windows `RegisterHotKey`; tray via `pystray`).
+- **Google account:** `src/player/google_account.py` (OAuth device flow, YouTube Data API v3, token encrypted with Windows DPAPI; standard library only).
 - **Mini player:** `src/player/mini_player.py`. Cover images come from `i.ytimg.com`, decoded with Pillow, cached in `CoverCache` (shared by both windows).
 - **App icon:** `assets/icon.ico` (window and .exe). README screenshots: `assets/screenshots/`.
-- **Packaging:** `build.ps1` bundles the app, `bin/mpv.exe` and `bin/vulkan-1.dll` into one `.exe` with PyInstaller.
+- **Packaging:** `build.ps1` bundles the app, `bin/mpv.exe`, `bin/vulkan-1.dll` and (if present) `client_secret*.json` into one `.exe` with PyInstaller. The client file is gitignored, never committed.
 
 ## Known limits
 - Each new song takes ~5–13 s to start (YouTube link lookup).
@@ -137,12 +151,19 @@ _Last updated: 2026-11-19_
 - While the player runs it **owns the media keys**, so a browser or Spotify won't react to them (even when the player is paused). Quit from the tray to give them back. If another app grabbed them first, the player's media keys don't work (a note is printed when run from source).
 - Reordering is one step at a time (Move up / Move down); there's no drag-and-drop.
 - Unpinned dock + collapsed = a 6 px line that other windows can cover; bring it back with the tray icon's Show player.
+- **Google sign-in lasts 7 days** while the Google Cloud app is in Testing mode; after that the player says "Google sign-in expired. Connect again." Only the test users listed in Google Cloud can connect.
+- Private videos (even your own) and deleted videos in Google playlists are skipped: they can't be played without browser cookies.
+- The music filter trusts the uploader's category: a song filed under another category is left out, and some non-songs filed as Music (e.g. guitar lessons) come in. A playlist with one song in two videos still counts.
+- "Liked music" comes from your YouTube liked list; YouTube Music–only likes may not be in it.
+- Editing or deleting a synced Google playlist in the player only changes the local copy; the next sync puts it back as it is on YouTube. They aren't offered under "Add to playlist".
 - Small icons on coloured buttons can show faint colour fringes (Windows ClearType text smoothing).
-- One playlist-import test fails occasionally (timing race in the test setup; not seen in the app).
 
 ---
 
 ## Change log
+- **2026-11-19:**
+  - Google account: connect with a code at google.com/device (Playlists tab → Google ▾); your YouTube music playlists (private ones too) and Liked music sync into the player, read-only, again at every start or with Sync now. Music only (YouTube's Music category; playlists at least half songs). Disconnect removes them. Sign-in saved encrypted with Windows DPAPI. No new dependencies.
+  - Fixed the tests that failed now and then: the in-memory test database is shared by threads and now takes turns (the app itself was never affected; it opens a new connection per call).
 - **2026-11-19:**
   - Your own playlists: Playlists tab (new, play, rename, delete), ＋ button and right-click "Add to playlist" on any song, pasted links can be added too, Move up / Move down in the Tracklist. Edits are saved in order.
   - Dock: **Ctrl+M** toggles full window ↔ dock; pin button for always-on-top (saved).

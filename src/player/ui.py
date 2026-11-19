@@ -5,6 +5,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import messagebox
 import urllib.request
+import webbrowser
 from typing import Optional, List
 
 import customtkinter as ctk
@@ -13,6 +14,7 @@ from PIL import Image
 
 from src.player.controller import PlayerController, is_playlist_url
 from src.player.desktop import dispatch_media_key, listen_media_keys, start_tray
+from src.player.google_account import load_client
 from src.player.models import PlaybackState, RepeatMode, Track
 
 # assets/ sits next to src/ in the repo and at the bundle root in the .exe build
@@ -142,7 +144,7 @@ class MusicPlayerApp(ctk.CTk):
     COVER = (176, 99)  # 16:9, logical px
 
     def __init__(self, controller: Optional[PlayerController] = None, theme: Optional[str] = None):
-        self.controller = controller or PlayerController()
+        self.controller = controller or PlayerController(google_client=load_client())
         saved = self.controller.get_setting("theme", DEFAULT_THEME)
         self.theme_choice = theme or (saved if saved in THEMES else AUTO)
         theme = resolve_theme(self.theme_choice)
@@ -188,6 +190,8 @@ class MusicPlayerApp(ctk.CTk):
                                quit_app=lambda: self.after(0, self.quit_app))
         self._tray_tip_shown = False
         self.bind("<Unmap>", self._on_unmap)
+        if self.controller.google_connected:  # pick up playlist changes made on YouTube since last time
+            self.controller.sync_google_async(lambda ok, msg: ok or self._google_done(ok, msg))
 
     def _load_theme(self, name: str):
         """(Re)build every widget in theme `name`, then repaint the current player state into it."""
@@ -353,10 +357,15 @@ class MusicPlayerApp(ctk.CTk):
         self.queue_scroll.pack(fill="both", expand=True)
         self.fav_scroll = self._scroll(fav_tab)
         self.fav_scroll.pack(fill="both", expand=True)
-        ctk.CTkButton(
-            pl_tab, text="+  New playlist", height=32, corner_radius=min(t["radius"], 16), fg_color=t["raised"],
-            hover_color=t["hover"], text_color=t["text"], font=(self.FONT, 12), command=self._new_playlist,
-        ).pack(fill="x", padx=4, pady=(2, 6))
+        pl_bar = ctk.CTkFrame(pl_tab, fg_color="transparent")
+        pl_bar.pack(fill="x", padx=4, pady=(2, 6))
+        pl_btn = dict(height=32, corner_radius=min(t["radius"], 16), fg_color=t["raised"], hover_color=t["hover"],
+                      text_color=t["text"], font=(self.FONT, 12))
+        if self.controller.google_available:
+            self.google_btn = ctk.CTkButton(pl_bar, text="Google  ▾", width=96, command=self._google_menu, **pl_btn)
+            self.google_btn.pack(side="right", padx=(6, 0))
+        ctk.CTkButton(pl_bar, text="+  New playlist", command=self._new_playlist, **pl_btn).pack(
+            side="left", fill="x", expand=True)
         self.pl_scroll = self._scroll(pl_tab)
         self.pl_scroll.pack(fill="both", expand=True)
 
@@ -661,6 +670,75 @@ class MusicPlayerApp(ctk.CTk):
         menu.add_command(label="Rename…", command=lambda: self.after(10, self._rename_playlist, p))
         menu.add_command(label="Delete…", command=lambda: self.after(10, self._delete_playlist, p))
         return menu
+
+    def _google_menu(self):
+        menu = tk.Menu(self, tearoff=0)
+        if self.controller.google_connected:
+            menu.add_command(label="Sync now", command=self._sync_google)
+            menu.add_command(label="Disconnect…", command=lambda: self.after(10, self._disconnect_google))
+        else:
+            menu.add_command(label="Connect Google account…", command=self._connect_google)
+        b = self.google_btn
+        menu.tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height())
+
+    def _google_done(self, ok: bool, msg: str):
+        self.after(0, self._flash, msg, not ok)
+
+    def _connect_google(self):
+        self._set_status("Getting a sign-in code from Google…")
+        self._google_cancel = self.controller.connect_google_async(
+            on_code=lambda code, url: self.after(0, self._show_google_code, code, url),
+            on_complete=lambda ok, msg: self.after(0, self._google_signed_in, ok, msg),
+            on_signed_in=lambda: self.after(0, self._google_syncing))
+
+    def _google_syncing(self):
+        self._close_google_win()
+        self._set_status("Connected. Getting your music playlists from YouTube…")
+
+    def _show_google_code(self, code: str, url: str):
+        """Small window with the code; the code is copied and the page opened, so the user just pastes."""
+        self._set_status("")
+        self.clipboard_clear()
+        self.clipboard_append(code)
+        webbrowser.open(url)
+        t = self.t
+        win = self._google_win = ctk.CTkToplevel(self, fg_color=t["bg"])
+        win.title("Connect Google")
+        win.resizable(False, False)
+        win.transient(self)
+        self._label(win, "On the page that just opened, enter this code:", size=12).pack(padx=24, pady=(20, 6))
+        self._label(win, code, size=26, bold=True, display=True).pack(padx=24)
+        self._label(win, f"It's copied, so you can paste it. Page: {url}", size=11, muted=True).pack(padx=24, pady=(4, 14))
+        row = ctk.CTkFrame(win, fg_color="transparent")
+        row.pack(pady=(0, 18))
+        btn = dict(height=32, corner_radius=min(t["radius"], 16), font=(self.FONT, 12))
+        ctk.CTkButton(row, text="Open page again", command=lambda: webbrowser.open(url), fg_color=t["accent"],
+                      hover_color=t["accent_hover"], text_color=t["on_accent"], **btn).pack(side="left", padx=4)
+        ctk.CTkButton(row, text="Cancel", command=self._cancel_google, fg_color=t["raised"], hover_color=t["hover"],
+                      text_color=t["text"], **btn).pack(side="left", padx=4)
+        win.protocol("WM_DELETE_WINDOW", self._cancel_google)
+
+    def _close_google_win(self):
+        win, self._google_win = getattr(self, "_google_win", None), None
+        if win is not None and win.winfo_exists():
+            win.destroy()
+
+    def _cancel_google(self):
+        self._google_cancel.set()
+        self._close_google_win()
+
+    def _google_signed_in(self, ok: bool, msg: str):
+        self._close_google_win()
+        self._flash(msg, not ok)
+
+    def _sync_google(self):
+        self._set_status("Getting your music playlists from YouTube…")
+        self.controller.sync_google_async(self._google_done)
+
+    def _disconnect_google(self):
+        if messagebox.askyesno("Disconnect Google", "Disconnect your Google account?\n\nIts playlists are removed "
+                               "from the player. History and Favorites stay.", parent=self):
+            self.controller.disconnect_google()
 
     def _open_playlist(self, p):
         if self.controller.play_playlist(p["id"]):
