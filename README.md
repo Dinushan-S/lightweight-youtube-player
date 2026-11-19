@@ -17,10 +17,11 @@ No installation is needed: download it and double-click. All releases are on the
 - **Paste and play:** single songs, whole playlists, or a song inside a playlist (it starts at that song while the rest of the list loads).
 - **Light on your PC:** audio only, played by a hidden [mpv](https://mpv.io) process. No browser tabs, no video decoding.
 - **Controls:** play / pause, previous, next, shuffle, repeat (off, all, one), seek, volume with mute and mouse-wheel steps.
-- **Docked mini player:** one click hides the window and pins a thin progress line to the top of your screen. Hover it for the cover, controls, volume, favorite and the playlist; drag it anywhere along the top.
+- **Docked mini player:** one click (or **Ctrl+M**) hides the window and pins a thin progress line to the top of your screen. Hover it for the cover, controls, volume, favorite and the playlist; drag it anywhere along the top; unpin it if you don't want it always on top.
+- **Your own playlists:** make playlists in the Playlists tab and add songs with ＋ or by right-clicking any song. Reorder with Move up / Move down, remove with ✕.
+- **Works in the background:** keyboard and headset media keys control it from any app, and closing or minimizing hides it to the system tray (right-click the tray icon to quit).
 - **Favorites:** heart a song from the main window or the dock; find it again in the Favorites tab.
 - **History:** every song you played, searchable. Press Play with an empty link box to pick up your last song.
-- **Edit playlists:** remove songs from the tracklist with ✕.
 - **Three minimalist themes:** by default it follows Windows (Graphite in dark mode, Porcelain in light mode), or pick Graphite, Porcelain or Indigo yourself.
 
 | Porcelain | Indigo |
@@ -39,7 +40,7 @@ The full feature list, with every detail, is in [memo.md](memo.md).
 2. Paste it into the box at the top and press **Play** (or Enter).
 3. Use the palette button (top-right) to change the theme, and the dock button next to it to shrink the player to the top of your screen.
 
-Your history, favorites, imported playlists and theme are saved in `%USERPROFILE%\.local_ytplayer\player.db` on your PC. Nothing is sent anywhere except the requests to YouTube needed to play the music.
+Your history, favorites, playlists and theme are saved in `%USERPROFILE%\.local_ytplayer\player.db` on your PC. Nothing is sent anywhere except the requests to YouTube needed to play the music.
 
 Screenshots use Blender Studio's open movies as example tracks.
 

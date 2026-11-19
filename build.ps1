@@ -12,6 +12,7 @@ if (-not (Test-Path "bin\mpv.exe")) { throw "bin\mpv.exe is missing. See README 
     --add-binary "bin\vulkan-1.dll;bin" `
     --add-data "assets\icon.ico;assets" `
     --collect-data customtkinter `
+    --hidden-import pystray._win32 `
     main.py 2>&1 | ForEach-Object { "$_" }
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed (exit $LASTEXITCODE)" }
 

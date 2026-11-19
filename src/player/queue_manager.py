@@ -134,6 +134,26 @@ class QueueManager:
             self._current_index = self._shuffle_order[self._shuffle_pos] if self._shuffle_pos >= 0 else -1
         return removed
 
+    def append(self, track: Track):
+        """Add a song to the end (in shuffle, to the end of the current round)."""
+        self._tracks.append(track)
+        if self._is_shuffle:
+            self._shuffle_order.append(len(self._tracks) - 1)
+
+    def move(self, index: int, to: int) -> bool:
+        """Move the song at `index` to position `to`; the playing song and shuffle round follow it."""
+        n = len(self._tracks)
+        if not (0 <= index < n and 0 <= to < n) or index == to:
+            return False
+        order = list(range(n))  # order[new position] = old position
+        order.insert(to, order.pop(index))
+        new_of = {old: new for new, old in enumerate(order)}
+        self._tracks = [self._tracks[old] for old in order]
+        if self._current_index >= 0:
+            self._current_index = new_of[self._current_index]
+        self._shuffle_order = [new_of[i] for i in self._shuffle_order]
+        return True
+
     def toggle_shuffle(self):
         """Toggle shuffle mode on/off. When enabled, shuffles remaining tracks keeping current track."""
         self._is_shuffle = not self._is_shuffle

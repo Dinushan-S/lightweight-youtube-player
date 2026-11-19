@@ -136,19 +136,38 @@ class DatabaseManager:
             """, (playlist_id, title, source_type, source_url))
 
     def get_playlists(self) -> List[Dict[str, Any]]:
-        """Return all playlists."""
+        """Return all playlists, newest first, each with its `track_count`."""
         with self._get_connection() as conn:
-            rows = conn.execute("SELECT * FROM playlists ORDER BY created_at DESC").fetchall()
+            rows = conn.execute("""
+                SELECT p.*, (SELECT COUNT(*) FROM playlist_tracks t WHERE t.playlist_id = p.id) AS track_count
+                FROM playlists p ORDER BY p.created_at DESC, p.rowid DESC
+            """).fetchall()
             return [dict(r) for r in rows]
 
-    def add_playlist_tracks(self, playlist_id: str, tracks: List[Track]):
-        """Add tracks to a playlist in order."""
+    def rename_playlist(self, playlist_id: str, title: str):
         with self._get_connection() as conn:
-            for i, t in enumerate(tracks):
-                conn.execute("""
-                    INSERT INTO playlist_tracks (playlist_id, video_id, title, channel, duration_sec, thumbnail_url, track_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (playlist_id, t.video_id, t.title, t.channel, t.duration_sec, t.thumbnail_url, i))
+            conn.execute("UPDATE playlists SET title = ? WHERE id = ?", (title, playlist_id))
+
+    @staticmethod
+    def _insert_tracks(conn, playlist_id: str, tracks: List[Track], first_order: int = 0):
+        conn.executemany("""
+            INSERT INTO playlist_tracks (playlist_id, video_id, title, channel, duration_sec, thumbnail_url, track_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, [(playlist_id, t.video_id, t.title, t.channel, t.duration_sec, t.thumbnail_url, first_order + i)
+              for i, t in enumerate(tracks)])
+
+    def add_playlist_tracks(self, playlist_id: str, tracks: List[Track]):
+        """Add tracks to the end of a playlist, in order."""
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT MAX(track_order) AS m FROM playlist_tracks WHERE playlist_id = ?",
+                               (playlist_id,)).fetchone()
+            self._insert_tracks(conn, playlist_id, tracks, 0 if row["m"] is None else row["m"] + 1)
+
+    def set_playlist_tracks(self, playlist_id: str, tracks: List[Track]):
+        """Replace a playlist's songs with `tracks` in this order (one transaction, so a crash can't empty it)."""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
+            self._insert_tracks(conn, playlist_id, tracks)
 
     def get_playlist_tracks(self, playlist_id: str) -> List[Track]:
         """Get all tracks in a playlist in order."""

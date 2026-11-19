@@ -2,7 +2,9 @@
 
 A small Windows desktop app that plays the **audio only** from YouTube videos and playlists. It uses no browser and decodes no video, so it stays light on CPU and RAM.
 
-**Download:** `LightweightYouTubePlayer.exe` from the [latest GitHub release](https://github.com/Dinushan-S/lightweight-youtube-player/releases/latest): one file, no install, mpv included.
+**Download:** [LightweightYouTubePlayer.exe](https://github.com/Dinushan-S/lightweight-youtube-player/releases/latest/download/LightweightYouTubePlayer.exe) (direct link, always the newest version): one file, no install, mpv included.
+**Releases:** [v1.0.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.0.0) (current) · [all releases](https://github.com/Dinushan-S/lightweight-youtube-player/releases)
+**Source code:** https://github.com/Dinushan-S/lightweight-youtube-player (public, MIT License)
 **Run from source:** `.venv\Scripts\python main.py` from the project folder.
 **Tests:** `.venv\Scripts\python -m pytest -q`
 **Build the .exe:** `.\build.ps1` (PyInstaller; output `dist\LightweightYouTubePlayer.exe`).
@@ -30,6 +32,7 @@ _Last updated: 2026-11-19_
 - **Linked song starts first.** With a `watch?v=X&list=Y` link, song X starts playing (~9 s) while the rest of the playlist is still loading (~15 s for 1,300 songs).
 - **Play with an empty link box.** Pressing Play (either button) with nothing loaded plays the most recent song from History. The empty screen says so: "Or press play to pick up your last song".
 - **Now playing:** the song's cover image, title (two lines at most), channel and audio format (e.g. `Saregama Tamil · Opus 160k`).
+- **Stuck on a wrong link?** While a link loads, the Play button turns into **Cancel**. Click it to stop waiting: the link text is selected so you can paste over it right away. Or just paste a new link and press **Enter** (or click a song in History/Favorites): the new one replaces the stuck one. A cancelled link never starts playing or gets saved, even if its lookup finishes later.
 - **Status text** appears under the title only when needed: "Finding the audio stream…" while loading, "Couldn't play that link. Check it and try again." on failure. The play/pause button shows whether it is playing.
 - **Audio quality:** best audio-only stream, Opus first, then M4A.
 
@@ -49,9 +52,25 @@ _Last updated: 2026-11-19_
 - **Favorites tab** in the side panel lists them, newest first. Click a song to play it; click its filled heart to remove it.
 - Favorites are saved in the player's database and kept between launches.
 
+### Your own playlists
+- **Playlists tab** (side panel) lists your playlists and the YouTube playlists you imported, with song counts ("12 songs · from YouTube"). The open one is highlighted.
+  - **+ New playlist** at the top asks for a name.
+  - **Click** a playlist to play it (switches to the Tracklist). **Right-click:** Play, Rename…, Delete…. The **✕** also deletes (asks first; songs stay in History and Favorites).
+- **Adding songs:**
+  - **＋ button** next to the heart under the title: adds the playing song to a playlist you pick, or makes a new one. If the link box holds a song link you haven't played yet, it adds **that link** instead (takes ~5–10 s to look up).
+  - **Right-click any song** in History, Tracklist or Favorites → **Add to playlist** → pick one, or **New playlist…**.
+  - Only your own playlists are offered (imported ones get replaced when you re-import them, so additions would be lost).
+- **Editing an open playlist** (in the Tracklist): right-click a song → **Move up / Move down / Remove**, or click its ✕. Every change is saved to the playlist right away, in order. Adding a song to the open playlist also adds it to the end of the queue.
+- The same song can be in a playlist more than once.
+
 ### Removing songs from a playlist
 - Every row in the **Tracklist** tab has an **✕**. It removes that song from the queue **and** from the saved copy of the playlist.
 - Removing the song that is playing doesn't stop it; Next continues with the song that took its place.
+
+### Media keys and the system tray
+- **Keyboard / headset media keys** (Play/Pause, Next, Previous) control the player from anywhere, even while another app is full-screen. Play/Pause with nothing loaded plays your last History song.
+- **Tray icon** (bottom-right of the taskbar, maybe under the ^ arrow): **left-click** shows the player; **right-click** for Show player, Play/Pause (label follows the state), Next, Previous, **Quit**. Hovering it shows the playing song.
+- **Closing (✕) or minimizing the window hides it to the tray; music keeps playing.** The first close shows a tip. Use **Quit** in the tray menu to really exit.
 
 ### Repeat and the queue
 - **Repeat One** loops the current song. **Repeat All** loops the whole queue (a single song counts as a one-song queue, so it loops too).
@@ -69,8 +88,10 @@ _Last updated: 2026-11-19_
 - **Mute button.** The icon follows the level (loud, quiet, silent, muted). Mute keeps your level and unmute restores it; moving the slider also unmutes.
 - Your volume is kept if the audio engine (mpv) restarts; it doesn't reset to 100%.
 
-### Docked mini player (Dock button, next to Play)
-- **Dock** hides the main window and pins a mini player to the **top edge of the screen** (top-right corner by default). It stays on top of other windows.
+### Docked mini player (Dock button, next to Play, or **Ctrl+M**)
+- **Dock** hides the main window and pins a mini player to the **top edge of the screen** (top-right corner by default). It stays on top of other windows unless you unpin it.
+- **Ctrl+M** switches between the full window and the dock (in the dock it works after you've clicked it once, since Windows sends keys only to the active window).
+- **Pin button** (top-right of the panel, next to Restore): accent pin = always on top; crossed-out pin = other windows can cover it. Your choice is saved.
 - **Collapsed:** just a thin progress line in the accent colour (320 px wide, not the full screen width) that fills as the song plays.
 - **Hover the line:** it drops down to show:
   - the song's cover image, title, channel and time (`Sun TV · 01:23 / 03:45`)
@@ -85,9 +106,10 @@ _Last updated: 2026-11-19_
 - **History:** every song you played, newest first, with a search box (title or channel). Click a song to play it again (it fetches a fresh stream, because saved stream addresses expire after a few hours).
 - **Tracklist:** the current queue. The playing song is highlighted; click any song to jump to it, ✕ to remove it. Big playlists show 60 songs around the current one ("Showing 1–60 of 1328").
 - **Favorites:** your hearted songs (see above).
+- **Playlists:** your own and imported playlists (see above).
 
 ### Saved data
-- History, imported playlists, favorites and the chosen theme are stored in SQLite at `~/.local_ytplayer/player.db`.
+- History, your playlists, imported playlists, favorites, the chosen theme and the dock pin are stored in SQLite at `~/.local_ytplayer/player.db`.
 - Importing the same playlist again replaces the saved copy (no duplicates). Deleted or private videos in a playlist are skipped.
 
 ---
@@ -99,6 +121,7 @@ _Last updated: 2026-11-19_
 - **Finding the audio stream:** yt-dlp (`src/player/resolver.py`). It waits out YouTube's brief 403 on fresh links before playing.
 - **Playing audio:** a hidden `mpv` process (`bin/mpv.exe`) controlled through a named pipe (`src/player/mpv_engine.py`).
 - **Storage:** `src/player/database.py` (history, playlists, favorites, settings).
+- **Media keys and tray:** `src/player/desktop.py` (media keys via Windows `RegisterHotKey`; tray via `pystray`).
 - **Mini player:** `src/player/mini_player.py`. Cover images come from `i.ytimg.com`, decoded with Pillow, cached in `CoverCache` (shared by both windows).
 - **App icon:** `assets/icon.ico` (window and .exe). README screenshots: `assets/screenshots/`.
 - **Packaging:** `build.ps1` bundles the app, `bin/mpv.exe` and `bin/vulkan-1.dll` into one `.exe` with PyInstaller.
@@ -111,6 +134,9 @@ _Last updated: 2026-11-19_
 - The `.exe` isn't code-signed, so Windows SmartScreen may warn on first launch (More info → Run anyway).
 - The mini player moves along the top of the **main** monitor only, and its position resets to the top-right each time you dock.
 - The dock's playlist has no ✕ remove; remove songs from the main window's Tracklist.
+- While the player runs it **owns the media keys**, so a browser or Spotify won't react to them (even when the player is paused). Quit from the tray to give them back. If another app grabbed them first, the player's media keys don't work (a note is printed when run from source).
+- Reordering is one step at a time (Move up / Move down); there's no drag-and-drop.
+- Unpinned dock + collapsed = a 6 px line that other windows can cover; bring it back with the tray icon's Show player.
 - Small icons on coloured buttons can show faint colour fringes (Windows ClearType text smoothing).
 - One playlist-import test fails occasionally (timing race in the test setup; not seen in the app).
 
@@ -118,9 +144,16 @@ _Last updated: 2026-11-19_
 
 ## Change log
 - **2026-11-19:**
+  - Your own playlists: Playlists tab (new, play, rename, delete), ＋ button and right-click "Add to playlist" on any song, pasted links can be added too, Move up / Move down in the Tracklist. Edits are saved in order.
+  - Dock: **Ctrl+M** toggles full window ↔ dock; pin button for always-on-top (saved).
+  - Media keys (keyboard and headset) work from any app; system tray icon with Show / Play-Pause / Next / Previous / Quit. Closing or minimizing now hides to the tray instead of quitting.
+  - New dependency: `pystray` (tray icon).
+  - A link that keeps loading can now be cancelled (Play becomes **Cancel**) or replaced by pasting a new link and pressing Enter. Before, Play stayed disabled until the bad link timed out.
+- **2026-11-19:**
   - Fixes from a code review: shuffle + Previous after the end no longer crashes; shuffle + Repeat All no longer replays the song that just ended; a deleted/private video in a playlist is skipped instead of stopping playback (it gives up after every song in a row fails); a slow failed lookup can no longer stop a newer song; mpv position listeners are registered once per mpv start instead of per song, so the UI no longer slows down over long sessions; background loading errors no longer leave the player stuck.
   - Each copy of the app now talks to its own mpv (the pipe name includes the process id).
-  - Windows `.exe` build (`build.ps1`), app icon, README with a download link, MIT license and third-party notices. Published on GitHub.
+  - Windows `.exe` build (`build.ps1`), app icon, README with a download link, MIT license and third-party notices.
+  - Published on GitHub as a public repo, with [release v1.0.0](https://github.com/Dinushan-S/lightweight-youtube-player/releases/tag/v1.0.0) carrying `LightweightYouTubePlayer.exe` (SHA-256 `1BC6B33CDA1B2CAF70F7FCECF626C0810450ADC43B46E1ED1B92FCB340117253`).
 - **2026-11-19:**
   - Removed the Stop button (the unlabeled square in the volume row); Pause covers it.
 - **2026-11-19:**

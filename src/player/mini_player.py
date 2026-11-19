@@ -25,8 +25,10 @@ class MiniPlayer(ctk.CTkToplevel):
         self._drag_dx = None
 
         self.overrideredirect(True)  # no title bar
-        self.attributes("-topmost", True)
+        self.attributes("-topmost", self.c.dock_pinned)
         self.configure(fg_color=t["surface"])
+        for key in ("<Control-m>", "<Control-M>"):
+            self.bind(key, lambda e: app.toggle_view())
 
         # Always visible: the progress line
         self.line = ctk.CTkProgressBar(
@@ -51,6 +53,8 @@ class MiniPlayer(ctk.CTkToplevel):
         self.title_label.pack(fill="x")
         self.channel_label = app._label(info, size=10, muted=True, anchor="w")
         self.channel_label.pack(fill="x")
+        self.pin_btn = app._icon_btn(header, Icon.PIN, self._toggle_pin, size=28, font_size=12)
+        self._show_pin()
         app._icon_btn(header, Icon.RESTORE, self._restore, size=28, font_size=12, muted=True)
         for w in (header, self.cover, info, self.title_label, self.channel_label):
             w.bind("<ButtonPress-1>", self._drag_start)
@@ -230,3 +234,14 @@ class MiniPlayer(ctk.CTkToplevel):
 
     def _restore(self):
         self.app.undock()
+
+    # --- always-on-top pin ------------------------------------------------------------
+    def _toggle_pin(self):
+        self.c.set_dock_pinned(not self.c.dock_pinned)
+        self.attributes("-topmost", self.c.dock_pinned)
+        self._show_pin()
+
+    def _show_pin(self):
+        on = self.c.dock_pinned  # pinned: accent pin; unpinned: muted "unpin" glyph
+        self.pin_btn.configure(text=Icon.PIN if on else Icon.UNPIN,
+                               text_color=self.app.t["accent"] if on else self.app.t["muted"])

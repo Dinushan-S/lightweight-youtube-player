@@ -1,4 +1,5 @@
 import threading
+import uuid
 from dataclasses import replace
 from typing import Optional, Any, Callable, List
 from urllib.parse import urlparse, parse_qs
@@ -33,7 +34,11 @@ class PlayerController:
         self._history_listeners: List[Callable[[], None]] = []
         self._queue_listeners: List[Callable[[], None]] = []
         self._favorites_listeners: List[Callable[[], None]] = []
+        self._playlists_listeners: List[Callable[[], None]] = []
         self._playlist_id: Optional[str] = None  # stored playlist the queue came from, if any
+        self._view = "full"  # "full" window or "mini" (docked)
+        # Bumped by every pasted-link open and by Cancel: a lookup whose number is no longer current is dropped.
+        self._open_seq = 0
         self._resolve_failures = 0  # consecutive queue songs that could not be resolved
         self._pending_track: Optional[Track] = None  # queue song whose stream is being fetched right now
 
@@ -92,12 +97,19 @@ class PlayerController:
     def add_favorites_listener(self, listener: Callable[[], None]):
         self._favorites_listeners.append(listener)
 
-    def _notify_history_change(self):
-        for listener in self._history_listeners:
+    def add_playlists_listener(self, listener: Callable[[], None]):
+        self._playlists_listeners.append(listener)
+
+    @staticmethod
+    def _call_all(listeners: List[Callable[[], None]], name: str):
+        for listener in listeners:
             try:
                 listener()
             except Exception as e:
-                print(f"[Controller History Listener Error] {e}")
+                print(f"[Controller {name} Listener Error] {e}")
+
+    def _notify_history_change(self):
+        self._call_all(self._history_listeners, "History")
 
     def _notify_state_change(self):
         for listener in self._state_listeners:
@@ -114,11 +126,7 @@ class PlayerController:
                 print(f"[Controller Timeline Listener Error] {e}")
 
     def _notify_queue_change(self):
-        for listener in self._queue_listeners:
-            try:
-                listener()
-            except Exception as e:
-                print(f"[Controller Queue Listener Error] {e}")
+        self._call_all(self._queue_listeners, "Queue")
 
     def update_timeline(self, time_pos: float, duration: float):
         self._time_pos = max(0.0, time_pos)
@@ -249,11 +257,91 @@ class PlayerController:
 
     def set_favorite(self, track: Track, on: bool):
         self._db.set_favorite(track, on)
-        for listener in self._favorites_listeners:
+        self._call_all(self._favorites_listeners, "Favorites")
+
+    # --- own playlists -------------------------------------------------------------
+    @property
+    def playlist_id(self) -> Optional[str]:
+        """The stored playlist the queue was loaded from (edits to the queue are saved to it)."""
+        return self._playlist_id
+
+    def get_playlists(self) -> List[dict]:
+        return self._db.get_playlists()
+
+    def create_playlist(self, title: str) -> str:
+        playlist_id = f"local-{uuid.uuid4().hex[:12]}"
+        self._db.create_playlist(playlist_id, title.strip() or "New playlist", source_type="local")
+        self._call_all(self._playlists_listeners, "Playlists")
+        return playlist_id
+
+    def rename_playlist(self, playlist_id: str, title: str):
+        if title.strip():
+            self._db.rename_playlist(playlist_id, title.strip())
+            self._call_all(self._playlists_listeners, "Playlists")
+
+    def delete_playlist(self, playlist_id: str):
+        """The queue keeps playing; it just stops being saved to the deleted playlist."""
+        self._db.delete_playlist(playlist_id)
+        if self._playlist_id == playlist_id:
+            self._playlist_id = None
+        self._call_all(self._playlists_listeners, "Playlists")
+
+    def add_to_playlist(self, playlist_id: str, track: Track):
+        self._db.add_playlist_tracks(playlist_id, [track])
+        if playlist_id == self._playlist_id:  # it's the open queue: keep queue and saved copy identical
+            self._queue.append(replace(track, stream_url=""))
+            self._notify_queue_change()
+        self._call_all(self._playlists_listeners, "Playlists")
+
+    def add_url_to_playlist_async(self, playlist_id: str, url: str,
+                                  on_complete: Optional[Callable[[bool], None]] = None):
+        """Look up a pasted song link (~5-10 s) and add it to a playlist, off the UI thread."""
+        def worker():
             try:
-                listener()
+                track = self._resolver.resolve_track(url)
+                if track:
+                    self.add_to_playlist(playlist_id, replace(track, stream_url=""))
+                ok = track is not None
             except Exception as e:
-                print(f"[Controller Favorites Listener Error] {e}")
+                print(f"[Controller] Could not add {url} to playlist: {e}")
+                ok = False
+            if on_complete:
+                on_complete(ok)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def play_playlist(self, playlist_id: str) -> bool:
+        tracks = self._db.get_playlist_tracks(playlist_id)
+        if not tracks:
+            return False
+        self.load_playlist(tracks)
+        self._playlist_id = playlist_id
+        return True
+
+    def move_in_queue(self, index: int, to: int):
+        """Reorder the queue; saved to its playlist when the queue is one."""
+        if self._queue.move(index, to):
+            if self._playlist_id:
+                self._db.set_playlist_tracks(self._playlist_id, self._queue.tracks)
+            self._notify_queue_change()
+
+    # --- window view (full window or docked mini player) ---------------------------
+    @property
+    def view(self) -> str:
+        return self._view
+
+    def set_view(self, view: str):
+        if view not in ("full", "mini"):
+            raise ValueError(view)
+        self._view = view
+
+    @property
+    def dock_pinned(self) -> bool:
+        """Whether the docked mini player stays above other windows (saved; on by default)."""
+        return self._db.get_setting("dock_pinned", "1") == "1"
+
+    def set_dock_pinned(self, on: bool):
+        self._db.set_setting("dock_pinned", "1" if on else "0")
 
     def set_repeat_mode(self, mode: RepeatMode):
         self._queue.repeat_mode = mode
@@ -308,10 +396,13 @@ class PlayerController:
     def get_history(self, limit: int = 50) -> List[Track]:
         return self._db.get_history(limit=limit)
 
-    def play_url(self, url: str) -> Optional[Track]:
-        """Resolves stream from URL and triggers playback."""
+    def play_url(self, url: str, seq: Optional[int] = None) -> Optional[Track]:
+        """Resolves stream from URL and triggers playback (unless the open was cancelled or replaced meanwhile)."""
+        seq = self._open_seq if seq is None else seq
         self.start_engine()
         track = self._resolver.resolve_track(url)
+        if seq != self._open_seq:
+            return None  # cancelled, or the user opened another link while this one was loading
         if track and track.stream_url:
             # A single song is a one-track queue, so Repeat works and an old playlist doesn't take over at its end.
             self._queue.load_tracks([replace(track, stream_url="")])
@@ -322,13 +413,19 @@ class PlayerController:
         return None
 
     def open_url_async(self, url: str, on_complete: Optional[Callable[[bool], None]] = None):
-        """Play a single video URL, or import+play a playlist URL, off the UI thread."""
+        """Play a single video URL, or import+play a playlist URL, off the UI thread.
+
+        Replaces any open still loading: that one's result is dropped when its lookup finishes.
+        """
+        self._open_seq += 1
+        seq = self._open_seq
+
         def worker():
             try:
                 if is_playlist_url(url):
-                    ok = self._import_playlist(url)
+                    ok = self._import_playlist(url, seq)
                 else:
-                    ok = self.play_url(url) is not None
+                    ok = self.play_url(url, seq) is not None
             except Exception as e:
                 print(f"[Controller] Failed to open {url}: {e}")
                 ok = False
@@ -337,24 +434,31 @@ class PlayerController:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def cancel_open(self):
+        """Stop waiting for the link being opened (yt-dlp can't be interrupted, so its result is dropped)."""
+        self._open_seq += 1
+
     def import_playlist_async(self, url: str, on_complete: Optional[Callable[[bool], None]] = None):
         """Extract a public/unlisted playlist in the background, store it, and play it."""
         self.open_url_async(url, on_complete)  # same guarded worker; playlist links route to _import_playlist
 
-    def _import_playlist(self, url: str) -> bool:
+    def _import_playlist(self, url: str, seq: Optional[int] = None) -> bool:
+        seq = self._open_seq if seq is None else seq
         start_id = parse_qs(urlparse(url).query).get("v", [""])[0]
         # Fetching a big playlist takes ~15s: play the linked song right away while it loads.
         early: List[Optional[Track]] = []
         early_thread = None
         if start_id:
             early_thread = threading.Thread(
-                target=lambda: early.append(self.play_url(f"https://www.youtube.com/watch?v={start_id}")),
+                target=lambda: early.append(self.play_url(f"https://www.youtube.com/watch?v={start_id}", seq)),
                 daemon=True,
             )
             early_thread.start()
         title, tracks = self._resolver.resolve_playlist(url)
         if early_thread:
             early_thread.join()
+        if seq != self._open_seq:
+            return False  # cancelled or replaced: don't store it or take over the queue
         if not tracks:
             return bool(early and early[0])
         playlist_id = parse_qs(urlparse(url).query).get("list", [url])[0]
@@ -396,6 +500,12 @@ class PlayerController:
                 self._play_track(queued)
             else:
                 url = f"https://www.youtube.com/watch?v={self._current_track.video_id}"
+                threading.Thread(target=self.play_url, args=(url,), daemon=True).start()
+        else:
+            # Nothing loaded yet (media key / tray before anything played): pick up the last History song.
+            last = self._db.get_history(limit=1)
+            if last:
+                url = f"https://www.youtube.com/watch?v={last[0].video_id}"
                 threading.Thread(target=self.play_url, args=(url,), daemon=True).start()
 
     def seek(self, seconds: float):
